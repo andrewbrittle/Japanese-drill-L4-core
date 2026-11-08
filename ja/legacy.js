@@ -1763,136 +1763,7 @@ const L12_LIST = window.JP_DRILL_L12_LIST || [];
 // membership can end up identical while the on-screen grouping still
 // visibly changes - check that before swapping any Collection over,
 // don't assume it's silent just because the AND flip was.
-function tagQueryMatches(itemTags, query) {
-  if (!itemTags) return false;
-  // Object form without `any` (2026-10-15): { all:[...], none:[...] } -
-  // every `all` tag and none of the `none` tags. `none` works with `any` too.
-  // Used to keep tourist words out of the Untaught pill's cards.
-  if (query && typeof query === 'object' && !Array.isArray(query) && query.none &&
-      query.none.some(tag => itemTags.includes(tag))) return false;
-  // `some` (2026-11-05): at least one of these tags as well - e.g. some:['L1','L2']
-  // for the L1/L2 pill's Groups, so words also tagged forward to L3 still count.
-  if (query && typeof query === 'object' && !Array.isArray(query) && query.some &&
-      !query.some.some(tag => itemTags.includes(tag))) return false;
-  if (query && typeof query === 'object' && !Array.isArray(query) && !query.any) {
-    return (query.all || []).every(tag => itemTags.includes(tag));
-  }
-  if (query && typeof query === 'object' && !Array.isArray(query) && query.any) {
-    // optional `all` (2026-10-07): every one of these too - e.g. any of
-    // food-type/drink AND taught, for the taught-only Food & drink Group.
-    if (query.all && !query.all.every(tag => itemTags.includes(tag))) return false;
-    // An entry can be a list of tags (2026-10-07) = one divider group, e.g.
-    // ['occupations', 'occupations-l3'] - same kind of word, different level.
-    return query.any.some(entry => (Array.isArray(entry) ? entry : [entry]).some(tag => itemTags.includes(tag)));
-  }
-  const required = Array.isArray(query) ? query : [query];
-  return required.every(tag => itemTags.includes(tag));
-}
 
-function getThemePool(themeKey) {
-  const theme = THEMES[themeKey];
-  if (!theme) return [];
-  if (theme.latestWords) {
-    // Range pills on its selection screen (2026-10-07): '1w' / '2w' = words
-    // ADDED in the newest week / two weeks of additions; 'level' = every word
-    // in the current (highest) level of the course, tagged forward or not.
-    const taught = getCoreVocabPool().filter(i => (i.tags || []).includes('taught'));
-    const byEn = (a, b) => a.en.toLowerCase() < b.en.toLowerCase() ? -1 : 1;
-    const range = appSettings.latestWordsRange || '1w';
-    if (range === 'level') {
-      let lvl = 0;
-      taught.forEach(i => (i.tags || []).forEach(t => { const m = /^L(\d)$/.exec(t); if (m && +m[1] > lvl) lvl = +m[1]; }));
-      return lvl ? taught.filter(i => i.tags.includes('L' + lvl)).sort(byEn) : [];
-    }
-    const dated = taught.filter(i => i.dateAdded);
-    if (!dated.length) return [];
-    const newest = dated.reduce((m, i) => (i.dateAdded > m ? i.dateAdded : m), '');
-    // 'batch' (2026-10-12, from the Portuguese app): only the newest dateAdded.
-    if (range === 'batch') return dated.filter(i => i.dateAdded === newest).sort(byEn);
-    const from = new Date(newest + 'T00:00:00Z'); from.setUTCDate(from.getUTCDate() - (range === '2w' ? 13 : 6));
-    const cutoff = from.toISOString().slice(0, 10);
-    return dated.filter(i => i.dateAdded >= cutoff).sort(byEn);
-  }
-
-  function buildCategoryItems(catKey) {
-    const cat = VOCAB[catKey];
-    if (!cat) return [];
-    return cat.items
-      .filter(itemTierVisible)
-      .map(item => Object.assign({ level: cat.level || 1, groupKey: catKey }, item));
-  }
-
-  // Tag-query themes - membership isn't a hand-picked list of whole
-  // categories (like sources/groups below), it's "every item anywhere that
-  // carries this tag", found by scanning every category once. Still respects
-  // itemTierVisible per item, same as buildCategoryItems above - a tagged
-  // untaught item still disappears from a tag pool the moment Untaught is
-  // switched off, same as it would from its own category. This is
-  // deliberately the same membership concept as sources/groups (a named,
-  // curated pool of words to drill) just resolved a different way - a word
-  // doesn't need to be duplicated or manually added to a category list to
-  // show up here, it just needs the tag, wherever it happens to actually
-  // live.
-  if (theme.tagQuery) {
-    const items = [];
-    Object.keys(VOCAB).forEach(catKey => {
-      buildCategoryItems(catKey).forEach(item => {
-        if (tagQueryMatches(item.tags, theme.tagQuery)) items.push(item);
-      });
-    });
-    // {any:[...]} OR queries get dividerGroup treatment same as `groups`
-    // below - grouped by which "any" tag matched (in the order that tag
-    // appears in the any list), alphabetized within each group, so a
-    // Collection like Core grammar words can move from a hand-picked
-    // groups list to a tag query without losing the divider between
-    // Verbs and Adjectives (added 2026-08-27 - a flat interleaved list
-    // turned out to genuinely read worse for a mixed-part-of-speech
-    // Collection like that one, not just "different").
-    const anyQuery = theme.tagQuery && typeof theme.tagQuery === 'object' && !Array.isArray(theme.tagQuery) ? theme.tagQuery.any : null;
-    if (anyQuery) {
-      return items
-        .map((item, idx) => ({
-          item, idx,
-          groupIndex: anyQuery.findIndex(entry => item.tags && (Array.isArray(entry) ? entry : [entry]).some(tag => item.tags.includes(tag))),
-        }))
-        .sort((a, b) => {
-          if (a.groupIndex !== b.groupIndex) return a.groupIndex - b.groupIndex;
-          const ak = a.item.en.toLowerCase(), bk = b.item.en.toLowerCase();
-          if (ak < bk) return -1;
-          if (ak > bk) return 1;
-          return a.idx - b.idx;
-        })
-        .map(({ item, groupIndex }) => Object.assign({ dividerGroup: groupIndex }, item));
-    }
-    return sortItemsAlphabetically(items);
-  }
-
-  if (theme.noSort) {
-    const items = [];
-    theme.sources.forEach(catKey => {
-      buildCategoryItems(catKey).forEach(item => items.push(item));
-    });
-    return items;
-  }
-
-  const items = [];
-  (theme.groups || []).forEach((groupCatKeys, groupIndex) => {
-    const groupItems = [];
-    groupCatKeys.forEach(catKey => {
-      buildCategoryItems(catKey).forEach(item => groupItems.push(item));
-    });
-    groupItems
-      .map((item, idx) => ({ item, idx }))
-      .sort((a, b) => {
-        const ak = a.item.en.toLowerCase(), bk = b.item.en.toLowerCase();
-        if (ak < bk) return -1;
-        if (ak > bk) return 1;
-        return a.idx - b.idx;
-      })
-      .forEach(({ item }) => items.push(Object.assign({ dividerGroup: groupIndex }, item)));
-  });
-  return items;
-}
 
 // Alphabetical by English meaning, case-insensitive, stable (true ties keep
 // their original relative order) - same comparator as the grouped-theme sort
@@ -2374,66 +2245,6 @@ Object.assign(CATEGORY_REFERENCE_LINKS, { // the core's, from APP.categoryLinks
   ],
 });
 
-function showVocabTileSelection(categoryKey) {
-  vocabTileCategory = categoryKey;
-  if (!vocabTileSelected[categoryKey]) vocabTileSelected[categoryKey] = new Set();
-  const cat = resolveVocabCategory(categoryKey);
-  document.getElementById('vocab-tile-selection-title').textContent = cat.label;
-  const refLinks = document.getElementById('vocab-tile-selection-ref-links');
-  if (refLinks) {
-    refLinks.innerHTML = '';
-    (CATEGORY_REFERENCE_LINKS[categoryKey] || []).forEach(({ label, fn }) => {
-      const card = document.createElement('div');
-      card.className = 'vocab-ref-card';
-      card.innerHTML = `<span>${label}</span><span class="vocab-ref-arrow">→</span>`;
-      card.onclick = fn;
-      refLinks.appendChild(card);
-    });
-    // Latest words: how far back to look (see getThemePool's latestWords).
-    if (categoryKey === 'theme-latest-words') {
-      const row = document.createElement('div');
-      row.className = 'level-filter-row latest-range-row';
-      const cur = appSettings.latestWordsRange || '1w';
-      [['batch', 'Newest'], ['1w', '1 week'], ['2w', '2 weeks'], ['level', 'This level']].forEach(([key, label]) => {
-        const btn = document.createElement('button');
-        btn.className = 'level-pill' + (key === cur ? ' active' : '');
-        btn.textContent = label;
-        btn.onclick = () => setLatestWordsRange(key);
-        row.appendChild(btn);
-      });
-      refLinks.appendChild(row);
-    }
-  }
-  const romajiCard = document.getElementById('vocab-tile-romaji-card');
-  if (romajiCard) {
-    romajiCard.style.display = ROMAJI_VIEW_CATEGORIES.includes(categoryKey) ? 'flex' : 'none';
-    romajiCard.classList.toggle('selected', !!appSettings.tileShowRomaji);
-  }
-  syncTileSoundControls(categoryKey);
-  buildVocabTileGrid(categoryKey);
-  refreshKanaScoreShading('vocab-tile-grid');
-  updateSelectAllVocabTilesLabel();
-  document.getElementById('vocab-tile-drill-btn').disabled = vocabTileSelected[categoryKey].size === 0;
-  syncVocabTileModeToggles(categoryKey);
-  // noMeaningMode categories hide the meaning toggle specifically (there's
-  // no distinct "meaning" to highlight - see its own definition above) but
-  // still get the reversed/typed-answer toggles, which are both about
-  // reading, not meaning - syncVocabTileModeToggles above already set their
-  // selected/disabled state correctly, this just layers the extra display
-  // rule on top for the one card that needs it.
-  const modeCard = document.getElementById('vocab-tile-drill-mode-card');
-  if (modeCard) modeCard.style.display = cat.noMeaningMode ? 'none' : 'flex';
-  // Themes are reliably too big to make "Select all" worth offering, so it's
-  // dropped there entirely rather than just being a pain to use. Everywhere
-  // else keeps it, however large - see getRandomPickSize for the random-pick
-  // side, which is the part that actually scales with category size.
-  const selectAllCard = document.getElementById('vocab-tile-select-all-card');
-  if (selectAllCard) selectAllCard.style.display = cat.isTheme ? 'none' : 'flex';
-  const randomCard = document.getElementById('vocab-tile-random20-card');
-  if (randomCard) randomCard.style.display = currentRandomPickSize(categoryKey) ? 'flex' : 'none';
-  updateRandomVocabTilesLabel();
-  showScreen('vocab-tile-selection');
-}
 
 
 
@@ -2580,59 +2391,27 @@ function tileRomajiFontSize(romaji) {
 // swallowed so it doesn't also select the card.
 // Placement: above the card if it fits, else beside it on the roomier
 // side (away from the finger), else below - always clamped on-screen.
-function showTilePeekBubble(tile, item) {
-  hideTilePeekBubble();
-  const b = document.createElement('div');
-  b.className = 'tile-peek-bubble';
-  b.id = 'tile-peek-bubble';
-  // Verbs (2026-10-07) get a hint line: slide towards this bubble and let
-  // go to open every form (showVerbFormsPopup). The arrow is filled in once
-  // the bubble's side is known, since it isn't always above the card.
+// What a held word's bubble shows (APP.peekFill): the word, its reading and
+// meaning, and on a verb, a hint to slide for all forms (the arrow is set
+// once the bubble's side is known). Kana (2026-10-16, from the Kanji
+// Strokes app) are drawn stroke by stroke instead, with romaji and stroke
+// count; contracted kana (きゃ) are two characters side by side. Returns the
+// drawing to start once the bubble is placed.
+function jaPeekFill(b, item) {
   const verbHint = isVerbItem(item) ? '<div class="peek-hint"><span class="peek-arrow">↑</span> slide here for all forms</div>' : '';
   if (item.glyphs) {
-    // Kana (2026-10-16, from the Kanji Strokes app): the character drawn
-    // stroke by stroke, with its romaji and stroke count. Contracted kana
-    // (きゃ, 2026-10-17) are two characters drawn side by side.
     const total = item.glyphs.reduce((t, g) => t + g.length, 0);
     const lay = peekGlyphLayout(item.chars || [], item.glyphs.length);
     b.classList.add('peek-kana');
     b.innerHTML = `<svg class="peek-svg" viewBox="0 0 ${lay.width} 109" style="width:${Math.round(84 * lay.width / 109)}px" aria-hidden="true"></svg><div class="peek-kana-text"><div class="peek-romaji">${item.romaji}</div><div class="peek-en">${total} stroke${total === 1 ? '' : 's'}</div></div>`;
-  } else {
+    return () => playPeekStrokes(b.querySelector('.peek-svg'), item.glyphs, lay);
+  }
   b.innerHTML = `<div class="peek-jp">${markSmallKana(item.jp)}</div><div class="peek-romaji">${item.romaji}</div><div class="peek-en">${item.en}</div>${verbHint}`;
-  var wordStrip = peekWordStrip(item);
-  if (wordStrip) b.insertBefore(wordStrip.svg, b.querySelector('.peek-hint'));
-  }
-  document.body.appendChild(b);
-  const r = tile.getBoundingClientRect();
-  const bw = b.offsetWidth, bh = b.offsetHeight;
-  const vw = window.innerWidth, vh = window.innerHeight, gap = 10, m = 8;
-  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  let left, top;
-  if (r.top - gap - bh >= m) {
-    top = r.top - gap - bh;
-    left = clamp(r.left + r.width / 2 - bw / 2, m, vw - bw - m);
-  } else {
-    const roomRight = vw - r.right - gap - m, roomLeft = r.left - gap - m;
-    if (Math.max(roomRight, roomLeft) >= Math.min(bw, 160)) {
-      left = roomRight >= roomLeft ? r.right + gap : r.left - gap - bw;
-      left = clamp(left, m, vw - bw - m);
-      top = clamp(r.top, m, vh - bh - m);
-    } else {
-      top = clamp(r.bottom + gap, m, vh - bh - m);
-      left = clamp(r.left + r.width / 2 - bw / 2, m, vw - bw - m);
-    }
-  }
-  b.style.left = left + 'px';
-  b.style.top = top + 'px';
-  const arrow = b.querySelector('.peek-arrow');
-  if (arrow) {
-    const dx = (left + bw / 2) - (r.left + r.width / 2), dy = (top + bh / 2) - (r.top + r.height / 2);
-    arrow.textContent = Math.abs(dy) >= Math.abs(dx) ? (dy < 0 ? '↑' : '↓') : (dx < 0 ? '←' : '→');
-  }
-  if (item.glyphs) playPeekStrokes(b.querySelector('.peek-svg'), item.glyphs, peekGlyphLayout(item.chars || [], item.glyphs.length));
-  else if (wordStrip) playPeekWord(wordStrip);
-  return b;
+  const wordStrip = peekWordStrip(item);
+  if (wordStrip) { b.insertBefore(wordStrip.svg, b.querySelector('.peek-hint')); return () => playPeekWord(wordStrip); }
+  return null;
 }
+
 // Stroke order, drawn one stroke after another (from the Kanji Strokes app):
 // every stroke faint first, then each drawn in turn and held.
 let peekStrokeToken = 0;
@@ -2753,158 +2532,7 @@ async function playPeekStrokes(svg, glyphs, lay) {
     await new Promise(r => setTimeout(r, ms + 40));
   }
 }
-// HOLD AND SLIDE (2026-10-07): on a verb, once the bubble is up, sliding
-// the finger towards it (VERB_SLIDE_PX along the line from card to bubble,
-// or onto the bubble itself) "arms" it - the bubble tints - and letting go
-// while armed opens the verb's full forms window. Slide back and it
-// disarms, so letting go just closes the bubble as before.
-const VERB_SLIDE_PX = 40;
-function attachTilePeek(tile, item) {
-  let timer = null, peeking = false, startX = 0, startY = 0, pointerId = null;
-  let bubble = null, armed = false;
-  const isVerb = isVerbItem(item);
-  const begin = () => {
-    timer = null;
-    peeking = true;
-    armed = false;
-    tile.classList.add('tile-peeking');
-    bubble = showTilePeekBubble(tile, item);
-    tilePeekSuppressClickUntil = Date.now() + 1000;
-    speakJapanese(item.speakAs || item.jp);
-  };
-  const end = (e) => {
-    if (timer) { clearTimeout(timer); timer = null; }
-    if (!peeking) return;
-    peeking = false;
-    tile.classList.remove('tile-peeking');
-    hideTilePeekBubble();
-    bubble = null;
-    tilePeekSuppressClickUntil = Date.now() + 400;
-    if (armed && e && e.type === 'pointerup') { armed = false; showVerbFormsPopup(item); }
-    armed = false;
-  };
-  // Tolerance (2026-10-02): a little wobble before the bubble appears is
-  // allowed (TILE_PEEK_MOVE_TOLERANCE); once it's showing, only lifting the
-  // finger closes it - the pointer is captured (so drifting off the card's
-  // edge doesn't count) and touchmove is blocked (so the page can't start
-  // scrolling, which would otherwise cancel the hold).
-  tile.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    startX = e.clientX; startY = e.clientY;
-    pointerId = e.pointerId;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      try { tile.setPointerCapture(pointerId); } catch (err) { /* pointer already gone */ }
-      begin();
-    }, TILE_PEEK_HOLD_MS);
-  });
-  tile.addEventListener('pointermove', e => {
-    if (timer && (Math.abs(e.clientX - startX) > TILE_PEEK_MOVE_TOLERANCE || Math.abs(e.clientY - startY) > TILE_PEEK_MOVE_TOLERANCE)) {
-      clearTimeout(timer); timer = null;
-    }
-    if (peeking && isVerb && bubble) {
-      const br = bubble.getBoundingClientRect();
-      const tr = tile.getBoundingClientRect();
-      let ux = (br.left + br.width / 2) - (tr.left + tr.width / 2), uy = (br.top + br.height / 2) - (tr.top + tr.height / 2);
-      const len = Math.hypot(ux, uy) || 1; ux /= len; uy /= len;
-      const along = (e.clientX - startX) * ux + (e.clientY - startY) * uy;
-      const onBubble = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
-      const nowArmed = onBubble || along >= VERB_SLIDE_PX;
-      if (nowArmed !== armed) { armed = nowArmed; bubble.classList.toggle('peek-armed', armed); }
-    }
-  });
-  tile.addEventListener('touchmove', e => { if (peeking && e.cancelable) e.preventDefault(); }, { passive: false });
-  ['pointerup', 'pointercancel'].forEach(t => tile.addEventListener(t, end));
-  tile.addEventListener('pointerleave', () => { if (!peeking) end(); });
-  tile.addEventListener('contextmenu', e => e.preventDefault());
-}
 
-function buildVocabTileGrid(categoryKey) {
-  const container = document.getElementById('vocab-tile-grid');
-  container.innerHTML = ''; // rebuilt each time - this one container is shared across categories
-  const grid = document.createElement('div');
-  grid.className = 'kanji-tile-grid';
-  const items = resolveVocabCategory(categoryKey).items;
-  const selected = vocabTileSelected[categoryKey];
-  const randomMode = !!vocabTileRandomMode[categoryKey];
-  const romajiView = !!appSettings.tileShowRomaji && ROMAJI_VIEW_CATEGORIES.includes(categoryKey);
-  const speakMode = tileSpeakModeActive(categoryKey);
-  items.forEach((item, idx) => {
-    // Grouped themes (see getThemePool) tag each item with dividerGroup - a
-    // gold divider marks the boundary between one source category's
-    // alphabetized block and the next. Regular categories and noSort themes
-    // never set dividerGroup, so this never fires for them.
-    // groupLabels (2026-10-11, Tourist essentials): a small heading per
-    // section, including above the first one.
-    const groupLabels = (THEMES[categoryKey] && THEMES[categoryKey].groupLabels) || null;
-    const newGroup = item.dividerGroup !== undefined && (idx === 0 || item.dividerGroup !== items[idx - 1].dividerGroup);
-    if (newGroup && groupLabels && groupLabels[item.dividerGroup]) {
-      const head = document.createElement('div');
-      head.className = 'tile-group-heading' + (idx === 0 ? ' first' : '');
-      head.textContent = groupLabels[item.dividerGroup];
-      grid.appendChild(head);
-    } else if (idx > 0 && newGroup) {
-      const divider = document.createElement('div');
-      divider.className = 'section-divider';
-      divider.style.flexBasis = '100%';
-      grid.appendChild(divider);
-    }
-    const tile = document.createElement('div');
-    tile.className = 'kana-ref-card';
-    let charSize, mainText;
-    if (romajiView) {
-      // Latin text runs wider per word than kana runs per character, so
-      // its own size steps; romaji is a quick-reference aid here, not drilled.
-      charSize = tileRomajiFontSize(item.romaji);
-      mainText = item.romaji;
-    } else {
-      charSize = tileKanaFontSize(item.jp);
-      mainText = item.jp;
-    }
-    // Small kana (っ ゃ ょ…) wrapped so they render visibly smaller - the
-    // missing wrap here made ちょっと read as chi-yo-tsu-to (fixed 2026-10-04).
-    tile.innerHTML = `<span class="kana-ref-char" style="font-size:${charSize};">${romajiView ? mainText : markSmallKana(mainText)}</span><span class="kana-ref-rom">${item.en}</span>`;
-    const scoreKey = item.jp + '|' + item.en;
-    tile.dataset.scoreKey = scoreKey;
-    const scoreClass = kanaScoreClass(scoreKey);
-    if (scoreClass) tile.classList.add(scoreClass);
-    // Production (typed) score: a thin bar along the bottom once tried.
-    // (2026-10-23) The thin production bar that sat here is gone (Andrew: a
-    // word's score mostly showed how often sentences used it). prodScores are
-    // still kept - sentence skills are measured by part instead (SB_PARTS).
-    // While a random-20 pick is disguising the grid, every tile shows as
-    // selected regardless of whether it's actually one of the 20 - that's
-    // the whole point (no clue which ones are really included).
-    const isSelected = randomMode || selected.has(idx);
-    if (categoryKey === 'vocab-colours') {
-      tile.style.borderWidth = '3px';
-      tile.classList.add('colour-tile');
-      if (!isSelected) {
-        const borderColor = colourBorderStyle(item.en, displayScore(kanaScores[scoreKey]));
-        if (borderColor) tile.style.borderColor = borderColor;
-      }
-    } else if (item.level !== undefined) {
-      // Theme-pooled items only - carries the source category's own level.
-      // Same 1px weight as every tile's default border, just coloured.
-      // Colour itself comes from itemColorKey (tag-based for untaught,
-      // level-based for taught) - see LEVEL_BORDER_COLORS above.
-      applyLevelTileEdge(tile, item, isSelected);
-    }
-    if (isSelected) tile.classList.add('selected');
-    if (speakMode) {
-      // Tap to hear: speaks instead of selecting, and stays tappable even
-      // while Random 20's disguise is on.
-      tile.onclick = () => { if (Date.now() < tilePeekSuppressClickUntil) return; speakVocabTile(item, tile); };
-    } else if (randomMode) {
-      tile.style.pointerEvents = 'none'; // disguise is only meaningful if nothing can be tapped to break it
-    } else {
-      tile.onclick = () => { if (Date.now() < tilePeekSuppressClickUntil) return; toggleVocabTile(categoryKey, idx, tile); };
-    }
-    if (speakMode || !randomMode) attachTilePeek(tile, item);
-    grid.appendChild(tile);
-  });
-  container.appendChild(grid);
-}
 
 // Restores a tile's resting border colour after deselection - Colours uses
 // its own hue/confidence style, theme tiles use their source level's colour,
@@ -2943,74 +2571,6 @@ function buildVocabTileGrid(categoryKey) {
 // without needing to read either label closely.
 
 
-function drillVocabTileSelection() {
-  const categoryKey = vocabTileCategory;
-  const set = vocabTileSelected[categoryKey];
-  if (set.size === 0) return;
-  // The random-20 disguise's whole job is stopping you seeing which 20 before
-  // you commit to drilling them - once the drill actually starts that's moot,
-  // so drop the disguise now rather than leaving every tile stuck looking
-  // selected when this screen is revisited afterwards. The real selection
-  // (the true 20) stays as-is, same as any other persisted selection.
-  vocabTileRandomMode[categoryKey] = false;
-  const cat = resolveVocabCategory(categoryKey);
-  drillByMeaning = cat.noMeaningMode ? false : !!vocabTileDrillMode[categoryKey];
-  vocabReversed = !!vocabTileReversedMode[categoryKey];
-  typeAnswerMode = !!vocabTileTypeAnswerMode[categoryKey];
-  listenMode = !!vocabTileListenMode[categoryKey] && soundAllowed();
-  const items = cat.items;
-  // See BUG FIX (2026-09-12) above allVisibleVocabItems - search results can
-  // be smaller than the 3 distractors a drill card needs, unlike every real
-  // category (all 4+ items). Everywhere else, distractors staying within
-  // the category's own items is deliberate; search has no real "category"
-  // to stay within, so it draws from the full visible pool instead.
-  const distractorPool = categoryKey === VOCAB_SEARCH_KEY ? allVisibleVocabItems() : items;
-  const selectedItems = [...set].sort((a, b) => a - b).map(idx => items[idx]);
-  const customDeck = selectedItems.map(item => {
-    const correct = item.romaji;
-    // (2026-10-07) In a Group with dividers, wrong answers come from the
-    // word's own group when it has enough words (4+) - frequency words with
-    // frequency words, transport with transport, food with food.
-    let pool = distractorPool;
-    if (item.dividerGroup !== undefined) {
-      const same = distractorPool.filter(i => i.dividerGroup === item.dividerGroup);
-      if (same.length >= 4) pool = same;
-    }
-    const distractorItems = pickDistractorItems(pool, item, 3);
-    const allItems = shuffle([item, ...distractorItems]);
-    return {
-      char: item.jp,
-      answer: correct,
-      answerRomaji: correct,
-      answerEn: item.en,
-      disp: 'word',
-      // Theme-pooled items already carry their true source category as their
-      // own groupKey (see getThemePool) - keep that instead of overwriting it
-      // with the theme's own key, so the drill badge shows exactly where a
-      // themed word came from (Transport vs UK Places, etc.), same idea as
-      // the kanji Verbs pool's groupKey. Regular categories are unaffected -
-      // their items never carry a groupKey of their own, so this falls back
-      // to categoryKey exactly as before.
-      groupKey: item.groupKey || categoryKey,
-      options: allItems.map(w => ({ en: w.en, jp: w.jp, rd: w.romaji })),
-      hint: item.en,
-      altForm: item.altForm,
-      altIsStandard: item.altIsStandard,
-      altAfterAnswer: item.altAfterAnswer,
-      kanjiReading: item.kanjiReading,
-      seenAs: item.seenAs,
-      source: item.source,
-      // Optional per-item override of what speech synthesis should actually
-      // say - only needed when the on-screen script is genuinely ambiguous
-      // to a TTS engine (e.g. a bare kanji like 骨 that a voice may read
-      // on'yomi "kotsu" instead of the correct kun'yomi "hone"). See
-      // getSpeechText().
-      speakAs: item.speakAs,
-    };
-  });
-  lastSettingsScreen = 'vocab-tile-selection';
-  startDrill(shuffle(customDeck));
-}
 
 // Pulled out of buildRandomKanjiPool so the "All kanji" card on the Themes
 // screen can compute its confidence swatch from the exact same full,
@@ -3084,88 +2644,38 @@ function applyScreenOrientation(id) {
     else so.lock('portrait').catch(() => {});
   } catch (e) { /* not allowed here - fine */ }
 }
-function showScreen(id) {
-  if (l3cPlay) l3cStopPlay(); // leaving the Sentence order card mid-step-through
+// Leaving a screen: stop the Sentence order card mid-step-through; turn
+// the screen the right way for where it's going (APP.beforeShowScreen).
+function jaBeforeShowScreen(id) {
+  if (l3cPlay) l3cStopPlay();
   applyScreenOrientation(id);
-  navRecord(id);
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
-  document.getElementById('screen-' + id).classList.add('visible');
-  renderNavBack();
-  document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
-  const settingsBtn = document.getElementById('settings-btn');
-  if (settingsBtn) settingsBtn.classList.toggle('active', id === 'settings');
-  // Looked up by pill id rather than row position (2026-09-22) - the old
-  // positional indices [0]/[1]/[2]/[4] broke the moment Hiragana/Katakana
-  // merged into one "Kana" pill and shifted every pill after it along by
-  // one; id lookups can't drift out of sync with the row's order again.
-  if (id === 'settings') {
-    // Its own entry point (the gear button above), not part of the nav-pill row.
-  } else if (id === 'kana-selection' || id === 'hiragana-selection' || id === 'katakana-selection') {
-    const p = document.getElementById('nav-kana'); if (p) p.classList.add('active');
-  } else if (id === 'kanji-selection' || id === 'kanji-index') {
-    const p = document.getElementById('nav-kanji'); if (p) p.classList.add('active');
-  } else if (id === 'match-settings' || id === 'vocab-reference' || id === 'vocab-tile-selection') {
-    const p = document.getElementById('nav-match'); if (p) p.classList.add('active');
-  } else {
-    // Shared/downstream screens with no type of their own - drill, results,
-    // counter-quiz-selection, and so on - light up whichever pill actually
-    // launched them, via lastSettingsScreen, rather than defaulting straight
-    // to Numbers. That default was the source of the "Numbers pill lights up
-    // while drilling Vocab" bug (noticed first on Materials, but it applied
-    // to every drill type - hiragana/katakana/kanji included - since none of
-    // them are in the explicit list above either).
-    const pillIdByOrigin = { 'kana-selection': 'nav-kana', 'hiragana-selection': 'nav-kana', 'katakana-selection': 'nav-kana',
-      'kanji-selection': 'nav-kanji', 'kanji-index': 'nav-kanji', 'numbers': 'nav-numbers', 'match-settings': 'nav-match', 'vocab-tile-selection': 'nav-match' };
-    const p = document.getElementById(pillIdByOrigin[lastSettingsScreen] || 'nav-numbers');
-    if (p) p.classList.add('active');
-  }
-  // The Vocab and Numbers tabs used to turn into "Back" on inner pages; since
-  // 2026-10-16 Back has its own button (renderNavBack), so tabs stay tabs.
-  // The lit tab is the section you're in - the main page at the bottom of
-  // the history (2026-10-16), so a grammar card lights Grammar and the kana
-  // dakuten chart lights かな, not Vocab.
+}
+
+// Which tab is lit (APP.pillFor): the section you're in - the main page at
+// the bottom of the history (2026-10-16), so a grammar card lights Grammar
+// and the kana dakuten chart lights かな, not Vocab. Failing that, the
+// screen's own tab, or for shared screens (drill, results, counter quiz...)
+// whichever tab launched them - not Numbers by default, which once lit
+// Numbers while drilling Vocab. Looked up by tab id, not position, so the
+// tab row's order can change. Settings has its own button, not a tab.
+function jaPillFor(id) {
+  if (id === 'settings') return null;
   const NAV_TAB = { 'kana-selection': 'nav-kana', 'kanji-index': 'nav-kanji', 'numbers': 'nav-numbers', 'match-settings': 'nav-match', 'build': 'nav-build', 'grammar': 'nav-grammar' };
   const navRoot = NAV_ROOTS.includes(id) ? id : (navStack[0] || NAV_HOME[id]);
-  if (id !== 'settings' && NAV_TAB[navRoot]) {
-    document.querySelectorAll('.nav-pill').forEach(p => p.classList.remove('active'));
-    const tab = document.getElementById(NAV_TAB[navRoot]); if (tab) tab.classList.add('active');
-  }
-  const navMatch = document.getElementById('nav-match');
-  const inReadSubScreen = false;
-  if (inReadSubScreen) {
-    navMatch.textContent = 'Back';
-    navMatch.classList.add('sub-screen');
-    // This pill's onclick used to be hardcoded to tryResumeMatch() (jump to
-    // the Vocab > Read screen) in the HTML, which was fine while
-    // vocab-reference could only ever be opened from within Vocab. Now that
-    // the Hiragana/Katakana selection screens also open it (for the
-    // dakuten/handakuten reference), that hardcoded jump would silently
-    // strand those visits on the Read screen instead of taking them back to
-    // where they actually came from - so this pill defers to the same
-    // vocabRefBackTarget-aware function the in-page "← Back" button uses.
-    navMatch.onclick = id === 'vocab-reference' ? closeVocabReference : tryResumeMatch;
-  } else {
-    navMatch.textContent = 'ことば';
-    navMatch.classList.remove('sub-screen');
-    navMatch.onclick = tryResumeMatch;
-  }
-  // Numbers pill doubles as a resume shortcut for any in-progress drill (not
-  // just a numbers one - the drill screen is shared across every type), so
-  // its label reflects whichever job it's currently doing.
-  //
-  // BUG FIX (2026-09-22): while actually mid-numbers-drill, this used to
-  // still say "Resume" and call tryResumeOrNumbers(), which just re-runs
-  // showScreen('drill') - a no-op re-display of the exact screen you're
-  // already on, with no way to leave. Vocab's own pill already solved this
-  // (see inReadSubScreen/navMatch above) by switching to "Back" + a plain
-  // exit call the moment you're actually IN that section's drill, rather
-  // than treating "mid-drill" and "abandoned drill, viewing elsewhere" as
-  // the same case. Numbers needs the identical split: inNumbersDrill is
-  // true only while id is genuinely 'drill' AND that deck is a numbers/
-  // time/counter one (isPendingDrillNumbers), so this can't misfire for an
-  // abandoned kana/kanji/vocab drill sitting in `deck` while you're
-  // elsewhere - the exact case the comment on isPendingDrillNumbers itself
-  // already guards against for the "Resume" label.
+  if (NAV_TAB[navRoot]) return NAV_TAB[navRoot];
+  if (id === 'kana-selection' || id === 'hiragana-selection' || id === 'katakana-selection') return 'nav-kana';
+  if (id === 'kanji-selection' || id === 'kanji-index') return 'nav-kanji';
+  if (id === 'match-settings' || id === 'vocab-reference' || id === 'vocab-tile-selection') return 'nav-match';
+  const pillIdByOrigin = { 'kana-selection': 'nav-kana', 'hiragana-selection': 'nav-kana', 'katakana-selection': 'nav-kana',
+    'kanji-selection': 'nav-kanji', 'kanji-index': 'nav-kanji', 'numbers': 'nav-numbers', 'match-settings': 'nav-match', 'vocab-tile-selection': 'nav-match' };
+  return pillIdByOrigin[lastSettingsScreen] || 'nav-numbers';
+}
+
+// The すうじ tab doubles as Resume for a drill left part way (any kind - the
+// drill screen is shared). While actually in a numbers drill it stays すうじ
+// and leaves for the Numbers page (it once said Resume there and just showed
+// the drill again, with no way out). (APP.onShowScreen)
+function jaOnShowScreen(id) {
   const navNumbers = document.getElementById('nav-numbers');
   if (navNumbers) {
     const inNumbersDrill = id === 'drill' && isPendingDrillNumbers();
@@ -3173,19 +2683,8 @@ function showScreen(id) {
     navNumbers.onclick = inNumbersDrill ? showNumbersScreen : tryResumeOrNumbers;
     navNumbers.classList.remove('sub-screen');
   }
-  if (id === 'kana-selection') refreshKanaSelectionSwatches();
-  else if (id === 'hiragana-selection') Object.keys(HIRAGANA_SECTIONS).forEach(key => refreshKanaScoreShading('hiragana-grid-' + key));
-  else if (id === 'katakana-selection') Object.keys(KATAKANA_SECTIONS).forEach(key => refreshKanaScoreShading('katakana-grid-' + key));
-  else if (id === 'kanji-selection') KANJI_SECTION_KEYS.forEach(key => refreshKanaScoreShading('kanji-grid-' + key));
-  else if (id === 'kanji-index') refreshKanjiIndexSwatches();
-  else if (id === 'vocab-tile-selection' && vocabTileCategory) refreshKanaScoreShading('vocab-tile-grid');
-  // Groups bars refresh here too (2026-10-10): they used to update only when
-  // the Groups pill itself was tapped, so coming back from a drill showed the
-  // old bars - including a grey "untested" part for words just drilled.
-  else if (id === 'match-settings') { buildMatchCategoryList(); if (currentMatchLevel === 'random') refreshRandomView(); if (currentMatchLevel === 'theme') refreshThemeCategorySwatches(); }
-  else if (id === 'numbers') updateNumberTimeSwatches();
-  else if (id === 'counter-quiz-selection') buildCounterQuizSelectionList();
 }
+
 
 
 // New index page (2026-09-22) sitting in front of Hiragana/Katakana -
@@ -3224,11 +2723,10 @@ function tryResumeKanji() {
   if (!appSettings.showKanji) return; // backstop - pill is also hidden via CSS
   showKanjiIndex();
 }
-function goBackToSettings() {
-  // Returning here always means "just finished a drill", never a fresh visit
-  // (fresh visits go through their own show*Selection() functions directly).
-  // Clear whatever was selected so the just-updated score shading is visible
-  // immediately, instead of hidden behind leftover "selected" highlighting.
+// Back from a drill to the kana tables or kanji: clear what was selected,
+// so the new score shading shows (APP.clearSelection; the core clears the
+// word tiles).
+function jaClearSelection(lastSettingsScreen) {
   if (lastSettingsScreen === 'hiragana-selection') {
     hiraganaSelectedRows[activeHiraganaSection].clear();
     const grid = document.getElementById('hiragana-grid-' + activeHiraganaSection);
@@ -3250,20 +2748,7 @@ function goBackToSettings() {
     const btn = document.getElementById('kanji-selection-drill-btn');
     if (btn) btn.disabled = true;
     updateSelectAllKanjiLabel();
-  } else if (lastSettingsScreen === 'vocab-tile-selection' && vocabTileCategory) {
-    vocabTileSelected[vocabTileCategory].clear();
-    buildVocabTileGrid(vocabTileCategory);
-    const btn = document.getElementById('vocab-tile-drill-btn');
-    if (btn) btn.disabled = true;
-    updateSelectAllVocabTilesLabel();
-    // Bug: this path rebuilt the grid and Select all's own label, but never
-    // refreshed Random 20's label - so after drilling from a random-20 pick
-    // (which clears vocabTileRandomMode when the drill starts, see
-    // drillVocabTileSelection), the button kept showing its stale
-    // "Deselect all" text even though nothing was actually selected anymore.
-    updateRandomVocabTilesLabel();
   }
-  showScreen(lastSettingsScreen);
 }
 
 function tryResume() {
@@ -3892,27 +3377,12 @@ function buildDeck() {
   return shuffle(d);
 }
 
-function startDrill(customDeck, deckBuilder) {
-  lastSettingsScreen = customDeck ? lastSettingsScreen : 'hiragana-selection';
-  lastDeckBuilder = deckBuilder || (customDeck ? (() => shuffle(customDeck)) : null);
-  deck = customDeck || buildDeck();
-  current = 0; score = 0; wrong = 0; hints = 0; answered = false; missed = []; missedItems = [];
-  showScreen('drill');
-  renderQuestion();
-}
-
-function drillAgain() {
-  if (lastDeckBuilder) startDrill(lastDeckBuilder());
-  else startDrill();
-}
 
 
-function drillMissed() {
-  // missed entries are "char|answer" composites, not bare chars - needed so
-  // characters that do double duty across sections with different tested
-  // meanings (e.g. 火 = Tuesday in one section, fire in another) don't pull
-  // in both when only one was actually missed.
-  const missedSet = new Set(missed);
+
+// Drill missed only: the kana and kanji missed, rebuilt from DATA (the core
+// adds the other kinds, kept as they were asked - APP.rebuildMissed).
+function jaRebuildMissed(missedSet) {
   // Rebuild regular DATA items. Kanji/survival items don't carry a static
   // `options` array (unlike kana, which does) - their options are only ever
   // generated at drill-start time from their own section's pool, then
@@ -3931,11 +3401,7 @@ function drillMissed() {
       all.push(withGroup);
     });
   });
-  const regularMissed = all;
-  // Add any stored number/word/time challenge missed items (these already
-  // carry their own working options from when they were first drilled)
-  const numberMissed = missedItems.filter(q => missedSet.has(q.char + '|' + q.answer));
-  startDrill(shuffle([...regularMissed, ...numberMissed]));
+  return all;
 }
 
 
@@ -4286,23 +3752,6 @@ function toggleWorkOffline() {
 // (beforeinstallprompt), so there the card gets an Install button.
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstallPrompt = e; refreshInstallCard(); });
 window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; refreshInstallCard(); });
-function refreshInstallCard() {
-  const card = document.getElementById('install-card');
-  if (!card) return;
-  if (appIsInstalled() || location.protocol === 'file:') { card.style.display = 'none'; return; }
-  const ua = navigator.userAgent || '';
-  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-  const android = /Android/.test(ua);
-  let steps;
-  if (ios) steps = 'Tap the Share button (the square with an arrow, at the bottom in Safari or top right in Chrome), scroll down and tap <strong>Add to Home Screen</strong>, then Add.';
-  else if (android && deferredInstallPrompt) steps = 'Tap <strong>Install</strong>, or use the browser menu (⋮) → Install app.';
-  else if (android) steps = 'In Chrome, tap the menu (⋮) at the top right, then <strong>Install app</strong> or <strong>Add to Home screen</strong>.';
-  else if (deferredInstallPrompt) steps = 'Click <strong>Install</strong>, or use the install icon at the right of the address bar.';
-  else steps = 'On a phone, open this page and use the browser\'s Add to Home Screen. On a computer, look for an install icon at the right of the address bar (Chrome or Edge).';
-  document.getElementById('install-card-steps').innerHTML = steps;
-  document.getElementById('install-btn').style.display = deferredInstallPrompt ? 'inline-block' : 'none';
-  card.style.display = 'flex';
-}
 
 
 /* ---------- Kana confidence tracking (on-device only, no sync) ---------- */
@@ -4507,32 +3956,12 @@ updatePrivateVocabStatus();
 // interact badly with any existing screen, and it's a one-off decision the
 // user makes at most once per interrupted drill.
 
-function isTrackedItem(q) {
-  const isKana = !!(q && (q.disp === 'base' || q.disp === 'diacritic' || q.disp === 'youon') &&
-    q.groupKey && (q.groupKey.startsWith('hiragana-') || q.groupKey.startsWith('katakana-')));
-  const isKanji = !!(q && (q.disp === 'kanji' || q.disp === 'survival'));
-  const isVocabWord = !!(q && q.disp === 'word');
-  const isNumberOrTime = !!(q && (q.disp === 'number' || q.disp === 'time' || q.disp === 'counter'));
-  const isVerbForm = !!(q && (q.disp === 'verbform' || q.disp === 'particle' || q.disp === 'sokuon'));
-  return isKana || isKanji || isVocabWord || isNumberOrTime || isVerbForm;
-}
 
 // Kana characters always mean the same sound, so the character itself is a
 // safe score key. A few kanji (火/水/木, etc.) are reused across categories
 // with genuinely different meanings (Tuesday vs fire, for example) — for
 // those, character alone would silently blend two different scores together,
 // so kanji use char+answer as the key instead.
-function getScoreKey(q) {
-  if (q.disp === 'kanji' || q.disp === 'survival') return q.char + '|' + q.answer;
-  if (q.disp === 'word') return q.char + '|' + (q.answerEn || q.answer);
-  if (q.disp === 'number') return 'numbers-consistency';
-  if (q.disp === 'time') return 'times-consistency';
-  if (q.disp === 'counter') return 'counters-consistency';
-  if (q.disp === 'verbform') return q.scoreKey; // 'verbform:たべます|pastNeg' - see buildVerbFormDeck
-  if (q.disp === 'particle') return q.scoreKey; // 'particle|で' - see buildParticleQuestion
-  if (q.disp === 'sokuon') return q.scoreKey; // 'sokuon|きって' - see buildSokuonDeck
-  return q.char;
-}
 
 
 // Single source of truth for every confidence display in the app - one
@@ -4757,90 +4186,28 @@ renderGroupCards();
 // so Groups and the level pages are purely things you pick words from.
 // Untaught without the tourist words (they have their own pill since 2026-10-15).
 const UNTAUGHT_ONLY_QUERY = { all: ['untaught'], none: ['tourist'] };
-function refreshRandomView() {
-  setupCatBar(document.getElementById('theme-all-vocab-swatch'), getCategoryBandCounts(getCoreVocabPool()));
-  setupCatBar(document.getElementById('theme-weakest-vocab-swatch'), getCategoryBandCounts(getWeakestVocabItems(20)));
-  setupCatBar(document.getElementById('theme-untested-vocab-swatch'), getCategoryBandCounts(getUntestedVocabItems()));
-  // How much is still untested (2026-10-15): "(312 of 1,550 · 40 taught, 272 untaught)".
-  const untestedEl = document.getElementById('untested-count');
-  if (untestedEl) {
-    const uniq = list => { const m = new Map(); list.forEach(i => m.set(i.jp + '|' + i.en, i)); return [...m.values()]; };
-    const all = uniq(getAllVocabPool()), un = uniq(getUntestedVocabItems());
-    const fmt = n => n.toLocaleString('en-GB');
-    let txt = ` (${fmt(un.length)} of ${fmt(all.length)}`;
-    if (appSettings.showUntaught || appSettings.showTourist) {
-      const has = (i, tag) => (i.tags || []).includes(tag);
-      const t = un.filter(i => has(i, 'taught')).length;
-      const tour = un.filter(i => has(i, 'untaught') && has(i, 'tourist')).length;
-      // Only the groups that still have words left (Andrew, 2026-10-16) - a
-      // zero only shows as the overall total, "(0 of 1,558)".
-      const parts = [];
-      if (t) parts.push(`${fmt(t)} taught`);
-      if (appSettings.showTourist && tour) parts.push(`${fmt(tour)} tourist`);
-      if (appSettings.showUntaught && un.length - t - tour) parts.push(`${fmt(un.length - t - tour)} untaught`);
-      if (parts.length) txt += ' · ' + parts.join(', ');
-    }
-    untestedEl.textContent = txt + ')';
+// Random's "still untested" count, split by kind when Untaught or Tourist is
+// on: "(312 of 1,550 · 40 taught, 272 untaught)". Only the kinds with words
+// left are named (Andrew, 2026-10-16); with none left it's "(0 of 1,558)".
+// (APP.untestedCount)
+function jaUntestedCount() {
+  const uniq = list => { const m = new Map(); list.forEach(i => m.set(i.jp + '|' + i.en, i)); return [...m.values()]; };
+  const all = uniq(getAllVocabPool()), un = uniq(getUntestedVocabItems());
+  const fmt = n => n.toLocaleString('en-GB');
+  let txt = ` (${fmt(un.length)} of ${fmt(all.length)}`;
+  if (appSettings.showUntaught || appSettings.showTourist) {
+    const has = (i, tag) => (i.tags || []).includes(tag);
+    const t = un.filter(i => has(i, 'taught')).length;
+    const tour = un.filter(i => has(i, 'untaught') && has(i, 'tourist')).length;
+    const parts = [];
+    if (t) parts.push(`${fmt(t)} taught`);
+    if (appSettings.showTourist && tour) parts.push(`${fmt(tour)} tourist`);
+    if (appSettings.showUntaught && un.length - t - tour) parts.push(`${fmt(un.length - t - tour)} untaught`);
+    if (parts.length) txt += ' · ' + parts.join(', ');
   }
-  [1, 2, 3, 4].forEach(n => setupCatBar(document.getElementById('random-l' + n + '-swatch'), getCategoryBandCounts(scanVocabByTag('L' + n))));
-  setupCatBar(document.getElementById('random-verbforms-swatch'), getCategoryBandCounts(verbFormScoreItems()));
-  setupCatBar(document.getElementById('random-adjforms-swatch'), getCategoryBandCounts(adjFormScoreItems()));
-  setupCatBar(document.getElementById('random-particles-swatch'), getCategoryBandCounts(particleScoreItems()));
-  setupCatBar(document.getElementById('random-sokuon-swatch'), getCategoryBandCounts(sokuonScoreItems()));
-  const untaughtCard = document.getElementById('random-untaught-card');
-  if (untaughtCard) {
-    untaughtCard.style.display = appSettings.showUntaught ? '' : 'none';
-    if (appSettings.showUntaught) setupCatBar(document.getElementById('random-untaught-swatch'), getCategoryBandCounts(scanVocabByTag(UNTAUGHT_ONLY_QUERY)));
-  }
-  if (randomChoice === 'untaught' && !appSettings.showUntaught) randomChoice = null;
-  const touristCard = document.getElementById('random-tourist-card');
-  if (touristCard) {
-    touristCard.style.display = appSettings.showTourist ? '' : 'none';
-    if (appSettings.showTourist) setupCatBar(document.getElementById('random-tourist-swatch'), getCategoryBandCounts(scanVocabByTag('tourist')));
-  }
-  if (randomChoice === 'tourist' && !appSettings.showTourist) randomChoice = null;
-  // Weakest needs something already tested, Untested needs something not yet
-  // tested - dim whichever has nothing in it rather than a Start that does nothing.
-  const empty = { weakest: !getWeakestVocabItems(1).length, untested: !getUntestedVocabItems().length };
-  Object.keys(empty).forEach(k => {
-    const card = document.querySelector(`#match-random-view [data-random-key="${k}"]`);
-    if (card) card.classList.toggle('dimmed', empty[k]);
-    if (empty[k] && randomChoice === k) randomChoice = null;
-  });
-  updateRandomChoiceUI();
+  return txt + ')';
 }
-function updateRandomChoiceUI() {
-  document.querySelectorAll('#match-random-view [data-random-key]').forEach(card => {
-    card.classList.toggle('selected', card.dataset.randomKey === randomChoice);
-  });
-  const btn = document.getElementById('random-start-btn');
-  if (btn) btn.disabled = !randomChoice;
-  // Verb forms is always multiple choice and has no meaning to highlight,
-  // so only the Reverse toggle applies - the other two fade (still tappable).
-  // Particles has a fixed set of buttons, so none of the three apply.
-  // Type applies to Verb forms too (reversed: type the form).
-  ['drill-mode-toggle-card', 'listen-toggle-card'].forEach(id => {
-    const card = document.getElementById(id);
-    if (card) card.classList.toggle('not-for-choice', randomChoice === 'verbforms' || randomChoice === 'adjforms' || randomChoice === 'particles' || randomChoice === 'sokuon');
-  });
-  const typeCard = document.getElementById('type-answer-toggle-card');
-  if (typeCard) typeCard.classList.toggle('not-for-choice', randomChoice === 'particles' || randomChoice === 'sokuon');
-  const revCard = document.getElementById('reversed-mode-toggle-card');
-  if (revCard) revCard.classList.toggle('not-for-choice', randomChoice === 'particles' || randomChoice === 'sokuon');
-}
-function startSelectedRandom() {
-  applyRandomModes(); // the dice page's own switches, not whatever a category drill left behind
-  if (randomChoice === 'all') startRandomMatchEverything();
-  else if (randomChoice === 'weakest') startWeakestVocab();
-  else if (randomChoice === 'untested') startUntestedVocab();
-  else if (randomChoice === 'untaught') startRandomForLevel('untaught');
-  else if (randomChoice === 'tourist') startRandomForLevel('tourist');
-  else if (randomChoice === 'verbforms') startVerbFormDrill();
-  else if (randomChoice === 'adjforms') startAdjFormDrill();
-  else if (randomChoice === 'particles') startParticleDrill();
-  else if (randomChoice === 'sokuon') startSokuonDrill();
-  else if (/^L[1234]$/.test(randomChoice || '')) startRandomForLevel(+randomChoice.slice(1));
-}
+
 
 // Reference grids are built once and cached, but scores change as drilling
 // happens elsewhere — this re-applies shading to the existing tiles each time
@@ -5179,29 +4546,6 @@ const KANJI_READINGS = {
 // Works out what Japanese text should actually be spoken for the current
 // question, since the character on screen isn't always the pronounceable side
 // (e.g. reversed mode shows romaji; number/time questions show digits).
-function getSpeechText(q) {
-  // Counter-quiz questions flip the usual direction (Japanese-sounding
-  // prompt, English answer options), so q.answer holds English here - the
-  // speakable form is the stashed kana reading instead.
-  if (q.disp === 'counter') return q.kana;
-  // Verb forms: the form shown, or - reversed, where saying the form would
-  // give the answer away - just the verb itself.
-  if (q.disp === 'verbform') return q.reverse ? q.verbJp : q.formJp;
-  if (q.disp === 'number' || q.disp === 'time') return q.answer;
-  if (q.disp === 'kanji' || q.disp === 'survival') {
-    const reading = KANJI_READINGS[q.char + '|' + q.answer];
-    return reading || q.char;
-  }
-  // Vocab word questions: normally q.char (the on-screen kanji/kana) is what
-  // gets spoken, but some words are genuinely ambiguous to a TTS voice - e.g.
-  // a bare kanji like 骨 has both a kun'yomi (hone, "bone") and an on'yomi
-  // (kotsu) reading, and the browser's engine can guess the wrong one. Items
-  // that need this get an explicit speakAs override (a hiragana form) in
-  // their VOCAB entry.
-  if (q.disp === 'word' && q.speakAs) return q.speakAs;
-  // word / base / diacritic / youon — q.char is already proper kana/kanji script here
-  return q.char;
-}
 
 
 // A second trigger for the exact same hint as speakCurrent() - reveals the
@@ -5280,37 +4624,10 @@ function revealRomaji() {
 // as the question appears (a moment later, so the cancel() in renderQuestion
 // can't swallow it on iPhone). Replaying is free - it's the question, not a
 // hint. revealListenWord() puts the word back once answered.
-function renderListenPrompt(q, charDisplay) {
-  const say = () => speakJapanese(getSpeechText(q));
-  charDisplay.innerHTML = `<button type="button" class="listen-play" aria-label="Play again">${LISTEN_ICON}</button>`;
-  charDisplay.querySelector('.listen-play').onclick = say;
-  document.getElementById('q-prompt').textContent = typeAnswerMode ? 'Type what you hear (romaji)' : (drillByMeaning ? 'What does the word you hear mean?' : 'Which word did you hear?');
-  const speakBtn = document.getElementById('speak-btn');
-  if (speakBtn) speakBtn.style.display = 'none';
-  const romajiBtn = document.getElementById('romaji-btn');
-  if (romajiBtn) romajiBtn.style.display = 'none';
-  setTimeout(() => { if (deck[current] === q && !answered) say(); }, 120);
-}
 // Kana answer size: as big as fits on one line in a half-width option.
 function optKanaSize(text) {
   const n = [...String(text || '')].filter(ch => !SMALL_KANA_CHARS.has(ch)).length;
   return n <= 5 ? 20 : n <= 7 ? 17 : n <= 9 ? 15 : 13;
-}
-function revealListenWord(q) {
-  if (q && q.disp === 'sokuon') {
-    const cd = document.getElementById('q-char');
-    if (!cd) return;
-    cd.innerHTML = `<div class="sk-reveal">${markSmallKana(q.answer)}</div><div class="sk-reveal-sub">${q.romaji} — ${q.en}</div>`;
-    cd.style.cursor = 'pointer';
-    cd.onclick = () => speakJapanese(q.answer);
-    return;
-  }
-  if (!(q && q.disp === 'word' && listenMode && !vocabReversed)) return;
-  const charDisplay = document.getElementById('q-char');
-  if (!charDisplay || !charDisplay.querySelector('.listen-play')) return;
-  charDisplay.innerHTML = markSmallKana(q.char);
-  charDisplay.style.cursor = 'pointer';
-  charDisplay.onclick = () => speakJapanese(getSpeechText(q));
 }
 
 // TYPED JAPANESE (2026-10-07) - reversed + Type. Lenient the same way the
@@ -5885,44 +5202,6 @@ function updateNumberTimeSwatches() {
   setSingleScoreBar('counters-score-swatch', kanaScores['counters-consistency']);
 }
 
-function setMatchLevel(level) {
-  if (level === 'andrew' && !appSettings.showAndrewMode) return; // backstop - pill is also hidden via CSS
-  if (level === 'untaught' && !appSettings.showUntaught) return; // backstop - pill is also hidden via CSS
-  if (level === 'grammar') { showGrammarPage(); return; } // Grammar is its own tab now (2026-10-16)
-  if (level === 'tourist' && !appSettings.showTourist) return;
-  currentMatchLevel = level;
-  if (level === 1 || level === 2) level = currentMatchLevel = 'l12'; // old L1/L2 pills merged (2026-11-05)
-  document.getElementById('level-pill-12').classList.toggle('active', level === 'l12');
-  document.getElementById('level-pill-3').classList.toggle('active', level === 3);
-  document.getElementById('level-pill-4').classList.toggle('active', level === 4);
-  document.getElementById('level-pill-theme').classList.toggle('active', level === 'theme');
-  const randomPill = document.getElementById('level-pill-random');
-  if (randomPill) randomPill.classList.toggle('active', level === 'random');
-  const grammarPill = document.getElementById('level-pill-grammar');
-  if (grammarPill) grammarPill.classList.toggle('active', level === 'grammar');
-  const andrewPill = document.getElementById('level-pill-andrew');
-  if (andrewPill) andrewPill.classList.toggle('active', level === 'andrew');
-  const untaughtPill = document.getElementById('level-pill-untaught');
-  if (untaughtPill) untaughtPill.classList.toggle('active', level === 'untaught');
-  const touristPill = document.getElementById('level-pill-tourist');
-  if (touristPill) touristPill.classList.toggle('active', level === 'tourist');
-  document.getElementById('vocab-level-filter-row').classList.toggle('showing-theme-colours', level === 'theme');
-  const optRow = document.getElementById('vocab-optional-filter-row');
-  if (optRow) optRow.classList.toggle('showing-theme-colours', level === 'theme');
-  // Andrew mode and Untaught vocabulary both deliberately reuse the same
-  // generic Level 1/2 list view (match-vocab-view + buildMatchCategoryList)
-  // rather than getting their own dedicated view like Collections has - so
-  // a new category just needs level:'andrew' or level:'untaught' in VOCAB
-  // and shows up automatically, no hand-built card needed. Genki (2026-09-12)
-  // joins the same list for the same reason.
-  document.getElementById('match-vocab-view').style.display = (level === 'l12' || level === 1 || level === 2 || level === 3 || level === 4 || level === 'andrew' || level === 'untaught' || level === 'tourist') ? 'flex' : 'none';
-  document.getElementById('match-theme-view').style.display = level === 'theme' ? 'flex' : 'none';
-  document.getElementById('match-random-view').style.display = level === 'random' ? 'flex' : 'none';
-  if (level === 'theme') refreshThemeCategorySwatches();
-  if (level === 'theme') return;
-  if (level === 'random') { refreshRandomView(); return; }
-  buildMatchCategoryList();
-}
 
 // Builds one real, permanent category tile - the ".match-card-select"
 // white-text style Materials cards have always used (group name, chars,
@@ -5938,96 +5217,47 @@ function setMatchLevel(level) {
 // branch), so this needed zero special-casing beyond checking THEMES[key]
 // to decide the label/chars source and the click handler.
 
-function buildMatchCategoryList() {
-  const container = document.getElementById('match-category-list');
-  container.innerHTML = '';
-  // Grammar notes hub - one entry point for every cross-cutting sentence/
-  // particle rule (as opposed to the reference cards below that stay tied
-  // to one specific word list, like the zodiac clock or days-in-order).
-  // Used to be scattered: sentence order and verb conjugation both sat
-  // above Verbs, negation sat above Question & location words, and the two
-  // external notes docs only showed up in Andrew mode. Gathered into one
-  // list here instead, shown once at the top of Level 2 rather than tied to
-  // whichever category happened to be nearby when each note was added -
-  // keeps the count from creeping up category-list clutter as more weeks
-  // add grammar points.
-  // Level 3 (2026-09-29) gets its own hub too - showGrammarNotesHubL3.
-  // Grammar notes moved to their own Grammar pill (2026-10-15) - see renderGrammarPage().
-  // PROMOTED FROM TEST (2026-08-31) - the tag-driven combined categories,
-  // now the standard way Andrew mode's Materials/Trip content is drilled
-  // (see the FUTURE DIRECTION entry dated 2026-08-31 for the full
-  // reasoning and per-category coverage numbers). Originally rendered above
-  // the separate Appliances reference card per Andrew's explicit
-  // instruction that these should sit at the top of the list; that
-  // reference card was later folded into its own category's selection
-  // screen instead (see CATEGORY_REFERENCE_LINKS below), so this is now
-  // simply the top of the list, full stop. All nine pull from
-  // resolveVocabCategory's THEMES branch:
-  //  - Stations & trains / Accommodation: promoted earlier the same day.
-  //  - Emergency & survival: needed no further data work at all - already
-  //    100% tag-covered and already standaloneCard:false from 2026-08-27.
-  //  - Food & drink / Shopping: promoted once their last coverage gaps
-  //    (service-ops screen, 12 leftover shop items) closed today.
-  //  - Signage & warnings: a same-day consequence of the Shopping fix -
-  //    those same 12 items also completed Signage's coverage.
-  //  - Service & shop operations: brand new screen for the service-ops
-  //    tag carved out of "Ordering & policy" earlier today.
-  //  - Entertainment: promoted once the 19 non-entertainment items in its
-  //    source category were split out (see theme-profile-words below and
-  //    the FUTURE DIRECTION entry). A genuine two-source combine (also
-  //    picks up 2 tourist-phrases items), not a solo flip.
-  //  - Profile & self-introduction words: brand new screen for the 14
-  //    words that split out of Entertainment the same way.
-  // (Materials — Hotel: Facilities & stay and Reference — Question words
-  // were also retired today, but neither gets a card here: the former
-  // folds into Accommodation above, and the latter is fully covered by
-  // Collections' own "Question words" card already - no new Andrew card
-  // needed, see the standaloneCard comment on vocab-reference-question-
-  // words for why that's the more instructive example of the two.)
+// The Vocab page's level pills (APP.matchLevel). Untaught, Tourist and
+// Andrew show only when their setting is on (the pills are hidden too);
+// Grammar is its own tab (2026-10-16); the old L1 and L2 pills are one
+// (2026-11-05).
+function jaPickMatchLevel(level) {
+  if (level === 'andrew' && !appSettings.showAndrewMode) return null;
+  if (level === 'untaught' && !appSettings.showUntaught) return null;
+  if (level === 'grammar') { showGrammarPage(); return null; }
+  if (level === 'tourist' && !appSettings.showTourist) return null;
+  if (level === 1 || level === 2) return 'l12';
+  return level;
+}
+function jaMatchLevelPills(level) {
+  document.getElementById('level-pill-12').classList.toggle('active', level === 'l12');
+  document.getElementById('level-pill-3').classList.toggle('active', level === 3);
+  document.getElementById('level-pill-4').classList.toggle('active', level === 4);
+  ['andrew', 'untaught', 'tourist'].forEach(k => {
+    const p = document.getElementById('level-pill-' + k);
+    if (p) p.classList.toggle('active', level === k);
+  });
+}
+
+// A level's list of word lists (APP.matchLevel.list). Untaught, Andrew and
+// Tourist reuse the same list view as the levels, so a new category only
+// needs its level (or a Group its show:) in vocab.js to appear.
+function jaLevelList(container, level) {
   // A line at the top saying this page can be switched off (2026-10-15) -
   // mainly so Untaught users know Tourist has its own switch.
   const offNote = text => { const d = document.createElement('div'); d.className = 'tier-off-note'; d.textContent = text; container.appendChild(d); };
-  if (currentMatchLevel === 'untaught') offNote('You can turn this page off in Settings (Untaught vocabulary).');
-  if (currentMatchLevel === 'tourist') offNote('You can turn this page off in Settings (Tourist words).');
-  if (currentMatchLevel === 'untaught') {
-    // GENKI LESSON 1-1 FIRST (2026-09-28) - the retired Genki tier's only
-    // category now leads this list instead of getting its own pill (see
-    // itemTierVisible and the LEVEL_BORDER_COLORS/applyShowGenkiVisibility
-    // comments for the rest of that migration). Deliberately not part of
-    // the alphabetized set below - it's one specific, currently-relevant
-    // lesson while class is starting, not one of many trip/photo
-    // categories - so it gets its own divider rather than sorting in
-    // wherever "Lesson 1-1" would alphabetically land.
-    // TOURIST ESSENTIALS FIRST (2026-10-01) - ahead of Genki for anyone
-    // switching Untaught on just to prepare for a trip (see
-    // theme-tourist-essentials in THEMES).
-    // (Tourist essentials moved to its own Tourist pill, 2026-10-15 - see below.)
-    // Private vocab pack categories (e.g. Genki) - only present on a device
-    // where the pack file has been loaded (see PRIVATE VOCAB PACKS).
+  if (level === 'untaught') offNote('You can turn this page off in Settings (Untaught vocabulary).');
+  if (level === 'tourist') offNote('You can turn this page off in Settings (Tourist words).');
+  if (level === 'untaught') {
+    // Private word lists (Genki) first, on a device where the file has been
+    // loaded; then one alphabetical set of the Untaught Groups (show:
+    // 'untaught') and categories (level:'untaught'). Cards whose words are
+    // all tourist words are empty here (those are on Tourist), so left out.
     PRIVATE_VOCAB_KEYS.forEach(key => container.appendChild(buildCategoryTile(key)));
     container.appendChild(document.createElement('div')).className = 'section-divider';
-    // ALPHABETICAL ORDER (2026-08-31, extended same day when Trip and
-    // Andrew merged into this one Untaught tier) - reads as one alphabetized
-    // set rather than "promoted theme cards first, plain categories after",
-    // a split that made sense while the promoted cards were new and needed
-    // emphasis but has no reason to persist now that every tile renders
-    // identically via buildCategoryTile. Combines the thirteen theme keys
-    // below (nine original promoted cards, plus the single Food & drink
-    // card split into five the same day - see theme-food's own comment)
-    // with whatever plain VOCAB categories still have a standalone tile at
-    // this level (the three FLIP PILOT conversions - Airport, Hotel:
-    // Appliances, Street - plus Weather and Tourist phrases, now that both
-    // carry level:'untaught' too instead of the retired level:'trip'), sorts
-    // by label, then hands off to buildCategoryTile exactly as before. The
-    // Object.keys(VOCAB).forEach loop below skips 'untaught' entirely now
-    // so these five don't render a second time.
-    // Untaught Groups come from the data (show:'untaught', see vocab.js) - 2026-10-12.
     const untaughtThemeKeys = Object.keys(THEMES).filter(key => THEMES[key].show === 'untaught');
     const untaughtVocabKeys = Object.keys(VOCAB).filter(key =>
       (VOCAB[key].level || 1) === 'untaught' && VOCAB[key].standaloneCard !== false);
-    // Cards whose words are all tourist words (Weather, Polite tourist
-    // phrases) are empty here since 2026-10-15 - those words are on the
-    // Tourist pill - so leave them out rather than show a 0-word card.
     untaughtThemeKeys.concat(untaughtVocabKeys)
       .filter(key => resolveVocabCategory(key).items.length > 0)
       .map(key => ({ key, label: (THEMES[key] || VOCAB[key]).label }))
@@ -6035,10 +5265,10 @@ function buildMatchCategoryList() {
       .forEach(({ key }) => container.appendChild(buildCategoryTile(key)));
     container.appendChild(document.createElement('div')).className = 'section-divider';
   }
-  // L1/L2 PILL (2026-11-05): one list in the order JP_DRILL_L12_LIST gives -
-  // the old L1 and L2 categories, with a few merged into Groups (show:'l12').
-  // Each card carries small L1/L2 badges for where its words come from.
-  if (currentMatchLevel === 'l12') {
+  // L1/L2: one list in JP_DRILL_L12_LIST's order - the old L1 and L2
+  // categories, a few merged into Groups (show:'l12'). Each card has small
+  // L1/L2 badges for where its words come from.
+  if (level === 'l12') {
     L12_LIST.filter(key => VOCAB[key] || THEMES[key]).forEach(key => {
       const card = buildCategoryTile(key);
       const lvls = VOCAB[key] ? [VOCAB[key].level || 1]
@@ -6050,9 +5280,9 @@ function buildMatchCategoryList() {
     });
     return;
   }
-  // TOURIST PILL (2026-10-15): "All tourist words" first, then one card per
-  // section in data order (theme-te-* in vocab.js, show:'tourist').
-  if (currentMatchLevel === 'tourist') {
+  // Tourist: "All tourist words" first, then one card per section in data
+  // order (theme-te-* in vocab.js, show:'tourist').
+  if (level === 'tourist') {
     Object.keys(THEMES).filter(key => THEMES[key].show === 'tourist-top')
       .forEach(key => container.appendChild(buildCategoryTile(key)));
     container.appendChild(document.createElement('div')).className = 'section-divider';
@@ -6060,36 +5290,19 @@ function buildMatchCategoryList() {
       .forEach(key => container.appendChild(buildCategoryTile(key)));
     return;
   }
-  // Appliances reference card removed from here (2026-08-31) - folded into
-  // Hotel: Appliances & machines' own tile-selection screen instead, along
-  // with the other four reference cards below (see CATEGORY_REFERENCE_LINKS
-  // and showVocabTileSelection). See the FUTURE DIRECTION entry for the
-  // full reasoning.
+  // Every other level: its categories in vocab.js order (Untaught's are
+  // above already). standaloneCard:false keeps a category as storage for
+  // tag scans without a card of its own. (Reference cards - the zodiac
+  // clock, days in order - are on their own category's screen.)
   Object.keys(VOCAB).forEach(key => {
     const v = VOCAB[key];
-    if ((v.level || 1) !== currentMatchLevel) return;
-    // Untaught's own VOCAB categories (Airport, Hotel: Appliances, Street,
-    // Weather, Tourist phrases) are rendered above already, alphabetized
-    // together with the promoted theme cards (2026-08-31) - skip them here
-    // so they don't render a second time. Every other level (1, 2) still
-    // goes through this loop as before.
-    if (currentMatchLevel === 'untaught') return;
-    // standaloneCard: false (2026-08-27, see vocab-trip-prep/vocab-
-    // emergency-survival above) - default is true (every category gets its
-    // own tile), explicitly false here. The category still exists as pure
-    // storage so every tag scan keeps finding its words, it just no longer
-    // gets its own tile in this list.
+    if ((v.level || 1) !== level) return;
+    if (level === 'untaught') return;
     if (v.standaloneCard === false) return;
-    // The four reference cards that used to render here (Time vocabulary's
-    // two, Days of the month, Days of the week, Animals' zodiac clock) are
-    // gone (2026-08-31) - folded into their own category's tile-selection
-    // screen instead, see CATEGORY_REFERENCE_LINKS above
-    // showVocabTileSelection. Nothing lost: each is still one tap away, now
-    // from inside its own category rather than floating above it in this
-    // list.
     container.appendChild(buildCategoryTile(key));
   });
 }
+
 
 // selectRandomMatchCard removed 2026-10-07 - level randoms moved to the Random page (selectRandomChoice).
 
@@ -9078,45 +8291,6 @@ function startRandomForLevel(level) {
   startVocabReadingDeck(allItems, 'random-level-' + level);
 }
 
-function buildVocabReadingDeck(items, groupKey, distractorPool) {
-  // See the WEIGHTED RANDOM SELECTION and DECAY entries above kanaScoreClass -
-  // weaker, never-drilled, and stale items come up more often than
-  // well-known, recently-practiced ones, rather than every item in the pool
-  // having identical odds.
-  const pool = weightedSampleWithoutReplacement([...items], 20, item => selectionWeight(decayedScore(kanaScores[item.jp + '|' + item.en])));
-  // distractorPool (2026-09-22) - defaults to items (unchanged behaviour
-  // for every existing caller), but Weakest 20/Untested 20 pass the WHOLE
-  // vocab pool here instead: items itself is deliberately narrowed to just
-  // the weakest/untested words, and drawing wrong-answer options from that
-  // same narrow set would be the "1 search match, no wrong options" bug
-  // from earlier this session all over again, just triggered by a small
-  // filtered pool instead of a small search result.
-  const pickFrom = distractorPool || items;
-  return pool.map(item => {
-    const correct = item.romaji;
-    const distractorItems = pickDistractorItems(pickFrom, item, 3);
-    const allItems = shuffle([item, ...distractorItems]);
-    return {
-      char: item.jp,
-      answer: correct,
-      answerRomaji: correct,
-      answerEn: item.en,
-      disp: 'word',
-      groupKey: groupKey,
-      options: allItems.map(w => ({ en: w.en, jp: w.jp, rd: w.romaji })),
-      hint: item.en,
-      altForm: item.altForm,
-      altIsStandard: item.altIsStandard,
-      altAfterAnswer: item.altAfterAnswer,
-      kanjiReading: item.kanjiReading,
-      seenAs: item.seenAs,
-      source: item.source,
-      // See the matching comment in drillVocabTileSelection - lets specific
-      // items override what speech synthesis actually says.
-      speakAs: item.speakAs,
-    };
-  });
-}
 
 
 // Pulled out of startRandomMatchEverything so the "All vocabulary" card on

@@ -70,6 +70,12 @@ function registerJaType(t) {
     feedbackExtra: jaFeedbackExtra,
     answerHtml: jaAnswerHtml,
     scoring: 'item',
+    // Its score is kept under the character itself, it's spoken as shown,
+    // and nothing changes on screen after a listening answer - unless the
+    // kind says otherwise below.
+    scoreKey: q => q.char,
+    speechText: q => q.char,
+    revealListen: () => {},
   }, t));
 }
 
@@ -149,13 +155,62 @@ function renderKanaKanjiQuestion(q, ui) {
     container.appendChild(btn);
   });
 }
-['base', 'diacritic', 'youon', 'kanji', 'survival'].forEach(id =>
-  registerJaType({ id, render: renderKanaKanjiQuestion, missedItem: false }));
+// Kana are scored only when they come from the kana tables.
+['base', 'diacritic', 'youon'].forEach(id => registerJaType({
+  id, render: renderKanaKanjiQuestion, missedItem: false,
+  tracked: q => !!(q.groupKey && (q.groupKey.startsWith('hiragana-') || q.groupKey.startsWith('katakana-'))),
+}));
+// A kanji is scored by its meaning too (火 is both Tuesday and fire), and
+// spoken by its reading where one is known.
+['kanji', 'survival'].forEach(id => registerJaType({
+  id, render: renderKanaKanjiQuestion, missedItem: false,
+  scoreKey: q => q.char + '|' + q.answer,
+  speechText: q => KANJI_READINGS[q.char + '|' + q.answer] || q.char,
+}));
 
 // ---- Words ----------------------------------------------------------------------
 
 registerJaType({
   id: 'word',
+  // A word's question (word lists, tiles, Random): the answer is the
+  // reading (romaji); the options carry reading and meaning; and it brings
+  // "also written", the kanji reading breakdown, where it was seen, and
+  // what the voice should say (speakAs: 骨 is hone, not kotsu).
+  build: (item, pool, groupKey) => {
+    const correct = item.romaji;
+    const distractorItems = pickDistractorItems(pool, item, 3);
+    const allItems = shuffle([item, ...distractorItems]);
+    return {
+      char: item.jp,
+      answer: correct,
+      answerRomaji: correct,
+      answerEn: item.en,
+      disp: 'word',
+      groupKey: groupKey,
+      options: allItems.map(w => ({ en: w.en, jp: w.jp, rd: w.romaji })),
+      hint: item.en,
+      altForm: item.altForm,
+      altIsStandard: item.altIsStandard,
+      altAfterAnswer: item.altAfterAnswer,
+      kanjiReading: item.kanjiReading,
+      seenAs: item.seenAs,
+      source: item.source,
+      speakAs: item.speakAs,
+    };
+  },
+  scoreKey: q => q.char + '|' + (q.answerEn || q.answer),
+  // Some words are ambiguous to a voice (骨: hone or kotsu), so they carry
+  // the kana to say (speakAs).
+  speechText: q => q.speakAs || q.char,
+  // After a listening answer, the word heard is shown (tap to hear again).
+  revealListen: q => {
+    if (!(listenMode && !vocabReversed)) return;
+    const charDisplay = document.getElementById('q-char');
+    if (!charDisplay || !charDisplay.querySelector('.listen-play')) return;
+    charDisplay.innerHTML = markSmallKana(q.char);
+    charDisplay.style.cursor = 'pointer';
+    charDisplay.onclick = () => speakJapanese(getSpeechText(q));
+  },
   render: (q, ui) => {
     const { charDisplay, container, promptEl } = ui;
     if (vocabReversed) {
@@ -187,7 +242,7 @@ registerJaType({
     charDisplay.style.fontSize = len <= 4 ? '72px' : len <= 6 ? '56px' : '40px';
     charDisplay.innerHTML = markSmallKana(q.char);
     promptEl.textContent = drillByMeaning ? 'What does this word mean?' : 'How do you read this word?';
-    if (listenMode && soundAllowed()) renderListenPrompt(q, charDisplay);
+    if (listenMode && soundAllowed()) renderListenPrompt(q, charDisplay, typeAnswerMode ? 'Type what you hear (romaji)' : (drillByMeaning ? 'What does the word you hear mean?' : 'Which word did you hear?'));
     const topField = drillByMeaning ? 'en' : 'rd';
     const bottomField = drillByMeaning ? 'rd' : 'en';
     q.answer = drillByMeaning ? q.answerEn : q.answerRomaji;
@@ -204,8 +259,11 @@ registerJaType({
 
 // ---- Numbers, times, counters (scored in small steps) -------------------------
 
+// All numbers share one score (and all times, all counters): it's the
+// skill being scored, not each figure.
 registerJaType({
   id: 'number', scoring: 'consistency',
+  scoreKey: () => 'numbers-consistency', speechText: q => q.answer,
   render: (q, { charDisplay, container, promptEl }) => {
     charDisplay.style.fontFamily = SANS;
     charDisplay.style.fontSize = '72px';
@@ -218,6 +276,7 @@ registerJaType({
 });
 registerJaType({
   id: 'time', scoring: 'consistency',
+  scoreKey: () => 'times-consistency', speechText: q => q.answer,
   render: (q, { charDisplay, container, promptEl }) => {
     charDisplay.style.fontFamily = SANS;
     const len = q.char.length;
@@ -233,8 +292,10 @@ registerJaType({
 // this tests the counter, so the prompt is the reading (in romaji - kana
 // would bring reading back in) and the options are English, one per
 // counter in play this round.
+// The answer here is English, so what's spoken is the kana reading.
 registerJaType({
   id: 'counter', scoring: 'consistency',
+  scoreKey: () => 'counters-consistency', speechText: q => q.kana,
   render: (q, { charDisplay, container, promptEl }) => {
     charDisplay.style.fontFamily = SANS;
     const len = q.char.length;
@@ -249,10 +310,31 @@ registerJaType({
 
 // ---- Verb forms, particles, small っ -------------------------------------------
 
-registerJaType({ id: 'verbform', render: (q, ui) => renderVerbFormQuestion(q, ui.charDisplay, ui.container) });
-registerJaType({ id: 'sokuon', render: (q, ui) => renderSokuonQuestion(q, ui.charDisplay, ui.container) });
+// Each verb form, particle and small っ word is scored under its own key,
+// set when the deck is built ('verbform:たべます|pastNeg', 'particle|で',
+// 'sokuon|きって').
+// A verb form is spoken as shown - or reversed, where that would give the
+// answer away, just the verb.
 registerJaType({
-  id: 'particle',
+  id: 'verbform', scoreKey: q => q.scoreKey,
+  speechText: q => q.reverse ? q.verbJp : q.formJp,
+  render: (q, ui) => renderVerbFormQuestion(q, ui.charDisplay, ui.container),
+});
+// After answering, the word is shown with its reading and meaning (tap to
+// hear it again).
+registerJaType({
+  id: 'sokuon', scoreKey: q => q.scoreKey,
+  render: (q, ui) => renderSokuonQuestion(q, ui.charDisplay, ui.container),
+  revealListen: q => {
+    const cd = document.getElementById('q-char');
+    if (!cd) return;
+    cd.innerHTML = `<div class="sk-reveal">${markSmallKana(q.answer)}</div><div class="sk-reveal-sub">${q.romaji} — ${q.en}</div>`;
+    cd.style.cursor = 'pointer';
+    cd.onclick = () => speakJapanese(q.answer);
+  },
+});
+registerJaType({
+  id: 'particle', scoreKey: q => q.scoreKey,
   render: (q, ui) => renderParticleQuestion(q, ui.charDisplay, ui.container),
   // Fill the gap; accepted alternatives light up too, so it's clear both
   // are right.

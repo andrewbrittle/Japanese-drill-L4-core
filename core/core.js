@@ -150,12 +150,19 @@ else Object.assign(THEMES, window.DRILL_GROUPS || {});
 // don't assume it's silent just because the AND flip was.
 function tagQueryMatches(itemTags, query) {
   if (!itemTags) return false;
-  if (query && typeof query === 'object' && !Array.isArray(query) && query.any) {
-    // optional `all` (2026-10-07): every one of these too - e.g. any of
-    // food-type/drink AND taught, for the taught-only Food & drink Group.
+  // A Group's words: a tag, a list of tags (all of them), or an object -
+  //   none: [...]  none of these (keeps Tourist words out of Untaught's cards)
+  //   some: [...]  at least one of these as well (L1/L2's Groups, so words
+  //                also tagged forward to L3 still count)
+  //   all: [...]   every one of these
+  //   any: [...]   any of these; an entry can itself be a list of tags (one
+  //                divider group: ['occupations', 'occupations-2'])
+  const obj = query && typeof query === 'object' && !Array.isArray(query);
+  if (obj && query.none && query.none.some(tag => itemTags.includes(tag))) return false;
+  if (obj && query.some && !query.some.some(tag => itemTags.includes(tag))) return false;
+  if (obj && !query.any) return (query.all || []).every(tag => itemTags.includes(tag));
+  if (obj && query.any) {
     if (query.all && !query.all.every(tag => itemTags.includes(tag))) return false;
-    // An entry can be a list of tags (2026-10-07) = one divider group, e.g.
-        // ['occupations', 'occupations-2'] - same kind of word, two tags.
     return query.any.some(entry => (Array.isArray(entry) ? entry : [entry]).some(tag => itemTags.includes(tag)));
   }
   const required = Array.isArray(query) ? query : [query];
@@ -167,10 +174,18 @@ function getThemePool(themeKey) {
   if (!theme) return [];
   if (theme.latestWords) {
     // Range pills on its selection screen: '1w' / '2w' = words ADDED in the
-    // newest week / two weeks of additions (by dateAdded).
-    const taught = getCoreVocabPool();
+    // newest week / two weeks of additions (by dateAdded); 'level' = every
+    // word in the highest level (L1, L2...), tagged forward or not. An app
+    // can narrow the words first (APP.latestWordsFrom - Japanese: taught).
+    const core = getCoreVocabPool();
+    const taught = APP.latestWordsFrom ? APP.latestWordsFrom(core) : core;
     const byEn = (a, b) => a.en.toLowerCase() < b.en.toLowerCase() ? -1 : 1;
     const range = appSettings.latestWordsRange || APP.latestWordsDefault || 'batch';
+    if (range === 'level') {
+      let lvl = 0;
+      taught.forEach(i => (i.tags || []).forEach(t => { const m = /^L(\d)$/.exec(t); if (m && +m[1] > lvl) lvl = +m[1]; }));
+      return lvl ? taught.filter(i => i.tags.includes('L' + lvl)).sort(byEn) : [];
+    }
     const dated = taught.filter(i => i.dateAdded);
     if (!dated.length) return [];
     const newest = dated.reduce((m, i) => (i.dateAdded > m ? i.dateAdded : m), '');
@@ -809,7 +824,8 @@ function showVocabTileSelection(categoryKey) {
       const row = document.createElement('div');
       row.className = 'level-filter-row latest-range-row';
       const cur = appSettings.latestWordsRange || APP.latestWordsDefault || 'batch';
-      [['batch', tx('latest.batch')], ['1w', tx('latest.1w')], ['2w', tx('latest.2w')]].forEach(([key, label]) => {
+      // An app can offer its own ranges (APP.latestRanges - Japanese adds This level).
+      (APP.latestRanges || [['batch', tx('latest.batch')], ['1w', tx('latest.1w')], ['2w', tx('latest.2w')]]).forEach(([key, label]) => {
         const btn = document.createElement('button');
         btn.className = 'level-pill' + (key === cur ? ' active' : '');
         btn.textContent = label;
@@ -831,10 +847,14 @@ function showVocabTileSelection(categoryKey) {
   // reading, not meaning - syncVocabTileModeToggles above already set their
   // selected/disabled state correctly, this just layers the extra display
   // rule on top for the one card that needs it.
-  // Select all everywhere, Groups included; the random pick depends only on
-  // size (see syncVocabDrillBtn's comment for the rule).
+  // Select all everywhere, Groups included, unless the app leaves it off
+  // Groups (APP.groupSelectAll: false - Japanese, where Groups are big); the
+  // random pick depends only on size (see syncVocabDrillBtn's comment).
   const selectAllCard = document.getElementById('vocab-tile-select-all-card');
-  if (selectAllCard) selectAllCard.style.display = 'flex';
+  if (selectAllCard) selectAllCard.style.display = (cat.isTheme && APP.groupSelectAll === false) ? 'none' : 'flex';
+  // The app's own cards on this screen (APP.onTileScreen - Japanese: show
+  // romaji, drill by meaning).
+  if (APP.onTileScreen) APP.onTileScreen(categoryKey, cat);
   const randomCard = document.getElementById('vocab-tile-random20-card');
   if (randomCard) randomCard.style.display = currentRandomPickSize(categoryKey) ? 'flex' : 'none';
   updateRandomVocabTilesLabel();
@@ -975,16 +995,21 @@ function showTilePeekBubble(tile, item) {
   const b = document.createElement('div');
   b.className = 'tile-peek-bubble';
   b.id = 'tile-peek-bubble';
-  // Verbs (2026-10-07) get a hint line: slide towards this bubble and let
-  // go to open every form (showVerbFormsPopup). The arrow is filled in once
-  // the bubble's side is known, since it isn't always above the card.
-    // The second line shows the Brazilian form where it differs, then any
-    // usage note.
-  // A language whose words have a second face (a reading worked out by rule,
-  // LANG.reading - Bulgarian's Latin spelling) shows it first.
-  const reading = LANG.reading && !item.noReading ? LANG.reading(item.jp) : '';
-  const extra = [reading ? escapeHtmlText(reading) : '', item.br ? tx('tiles.brazil', { w: escapeHtmlText(item.br) }) : '', item.note ? escapeHtmlText(item.note) : ''].filter(Boolean).join(' · ');
-  b.innerHTML = `<div class="peek-jp">${escapeHtmlText(item.jp)}</div>${extra ? `<div class="peek-romaji">${extra}</div>` : ''}<div class="peek-en">${escapeHtmlText(item.en)}</div>`;
+  // The word, a second line, the meaning. The second line: a language's
+  // second face first (a reading worked out by rule, LANG.reading -
+  // Bulgarian's Latin spelling), then the Brazilian form where it differs,
+  // then any usage note. A .peek-arrow in the bubble is pointed at the card
+  // once the bubble's side is known (it isn't always above).
+  // An app can fill the bubble itself (APP.peekFill(b, item) - Japanese: the
+  // reading, a verb's "slide here" hint, kana drawn stroke by stroke); what
+  // it returns runs once the bubble is placed (the stroke animation).
+  let afterPlaced = null;
+  if (APP.peekFill) afterPlaced = APP.peekFill(b, item);
+  else {
+    const reading = LANG.reading && !item.noReading ? LANG.reading(item.jp) : '';
+    const extra = [reading ? escapeHtmlText(reading) : '', item.br ? tx('tiles.brazil', { w: escapeHtmlText(item.br) }) : '', item.note ? escapeHtmlText(item.note) : ''].filter(Boolean).join(' · ');
+    b.innerHTML = `<div class="peek-jp">${escapeHtmlText(item.jp)}</div>${extra ? `<div class="peek-romaji">${extra}</div>` : ''}<div class="peek-en">${escapeHtmlText(item.en)}</div>`;
+  }
   document.body.appendChild(b);
   const r = tile.getBoundingClientRect();
   const bw = b.offsetWidth, bh = b.offsetHeight;
@@ -1012,6 +1037,7 @@ function showTilePeekBubble(tile, item) {
     const dx = (left + bw / 2) - (r.left + r.width / 2), dy = (top + bh / 2) - (r.top + r.height / 2);
     arrow.textContent = Math.abs(dy) >= Math.abs(dx) ? (dy < 0 ? '↑' : '↓') : (dx < 0 ? '←' : '→');
   }
+  if (afterPlaced) afterPlaced();
   return b;
 }
 function hideTilePeekBubble() {
@@ -1020,13 +1046,21 @@ function hideTilePeekBubble() {
   if (old) old.remove();
 }
 let tilePeekSuppressClickUntil = 0;
+// Some words do more when held (APP.peekSlide(item) - Japanese's verbs):
+// slide towards the bubble, or onto it, and let go to open it (the bubble
+// lights up when armed). PEEK_SLIDE_PX: how far along the line from card to
+// bubble counts.
+const PEEK_SLIDE_PX = 40;
 function attachTilePeek(tile, item) {
   let timer = null, peeking = false, startX = 0, startY = 0, pointerId = null;
+  let bubble = null, armed = false;
+  const slide = APP.peekSlide ? APP.peekSlide(item) : null;
   const begin = () => {
     timer = null;
     peeking = true;
+    armed = false;
     tile.classList.add('tile-peeking');
-    showTilePeekBubble(tile, item);
+    bubble = showTilePeekBubble(tile, item);
     tilePeekSuppressClickUntil = Date.now() + 1000;
     speakTarget(item.speakAs || item.jp);
   };
@@ -1036,7 +1070,10 @@ function attachTilePeek(tile, item) {
     peeking = false;
     tile.classList.remove('tile-peeking');
     hideTilePeekBubble();
+    bubble = null;
     tilePeekSuppressClickUntil = Date.now() + 400;
+    if (armed && e && e.type === 'pointerup') { armed = false; slide(); }
+    armed = false;
   };
   // Tolerance (2026-10-02): a little wobble before the bubble appears is
   // allowed (TILE_PEEK_MOVE_TOLERANCE); once it's showing, only lifting the
@@ -1056,6 +1093,16 @@ function attachTilePeek(tile, item) {
   tile.addEventListener('pointermove', e => {
     if (timer && (Math.abs(e.clientX - startX) > TILE_PEEK_MOVE_TOLERANCE || Math.abs(e.clientY - startY) > TILE_PEEK_MOVE_TOLERANCE)) {
       clearTimeout(timer); timer = null;
+    }
+    if (peeking && slide && bubble) {
+      const br = bubble.getBoundingClientRect();
+      const tr = tile.getBoundingClientRect();
+      let ux = (br.left + br.width / 2) - (tr.left + tr.width / 2), uy = (br.top + br.height / 2) - (tr.top + tr.height / 2);
+      const len = Math.hypot(ux, uy) || 1; ux /= len; uy /= len;
+      const along = (e.clientX - startX) * ux + (e.clientY - startY) * uy;
+      const onBubble = e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;
+      const nowArmed = onBubble || along >= PEEK_SLIDE_PX;
+      if (nowArmed !== armed) { armed = nowArmed; bubble.classList.toggle('peek-armed', armed); }
     }
   });
   tile.addEventListener('touchmove', e => { if (peeking && e.cancelable) e.preventDefault(); }, { passive: false });
@@ -1078,7 +1125,17 @@ function buildVocabTileGrid(categoryKey) {
     // gold divider marks the boundary between one source category's
     // alphabetized block and the next. Regular categories and noSort themes
     // never set dividerGroup, so this never fires for them.
-    if (idx > 0 && item.dividerGroup !== undefined && item.dividerGroup !== items[idx - 1].dividerGroup) {
+    // groupLabels (a Group's sections, e.g. Japanese's Tourist essentials): a
+    // small heading per section, including above the first one; otherwise
+    // a plain divider between sections.
+    const groupLabels = (THEMES[categoryKey] && THEMES[categoryKey].groupLabels) || null;
+    const newGroup = item.dividerGroup !== undefined && (idx === 0 || item.dividerGroup !== items[idx - 1].dividerGroup);
+    if (newGroup && groupLabels && groupLabels[item.dividerGroup]) {
+      const head = document.createElement('div');
+      head.className = 'tile-group-heading' + (idx === 0 ? ' first' : '');
+      head.textContent = groupLabels[item.dividerGroup];
+      grid.appendChild(head);
+    } else if (idx > 0 && newGroup) {
       const divider = document.createElement('div');
       divider.className = 'section-divider';
       divider.style.flexBasis = '100%';
@@ -1086,7 +1143,10 @@ function buildVocabTileGrid(categoryKey) {
     }
     const tile = document.createElement('div');
     tile.className = 'kana-ref-card';
-    tile.innerHTML = `<span class="kana-ref-char" style="font-size:${tileWordFontSize(item.jp)};">${escapeHtmlText(item.jp)}</span><span class="kana-ref-rom">${escapeHtmlText(item.en)}</span>`;
+    // What's on the tile: the word and its meaning, or the app's own
+    // (APP.tileHtml - Japanese: small kana sized right, or romaji).
+    tile.innerHTML = APP.tileHtml ? APP.tileHtml(item, categoryKey)
+      : `<span class="kana-ref-char" style="font-size:${tileWordFontSize(item.jp)};">${escapeHtmlText(item.jp)}</span><span class="kana-ref-rom">${escapeHtmlText(item.en)}</span>`;
     const scoreKey = item.jp + '|' + item.en;
     tile.dataset.scoreKey = scoreKey;
     const scoreClass = kanaScoreClass(scoreKey);
@@ -1106,7 +1166,10 @@ function buildVocabTileGrid(categoryKey) {
       // Theme-pooled items only - carries the source category's own level.
       // Same 1px weight as every tile's default border, just coloured.
             // Colour itself comes from itemColorKey - see LEVEL_BORDER_COLORS.
-      if (!isSelected) tile.style.borderColor = LEVEL_BORDER_COLORS[itemColorKey(item)] || '';
+      // With dashed levels (Japanese's Tourist, Untaught, Genki), the edge is
+      // drawn by applyLevelTileEdge.
+      if (APP.dashedLevels) applyLevelTileEdge(tile, item, isSelected);
+      else if (!isSelected) tile.style.borderColor = LEVEL_BORDER_COLORS[itemColorKey(item)] || '';
     }
     if (isSelected) tile.classList.add('selected');
     if (speakMode) {
@@ -1275,6 +1338,8 @@ function drillVocabTileSelection() {
   vocabTileRandomMode[categoryKey] = false;
   const cat = resolveVocabCategory(categoryKey);
   sayMode = !!vocabTileSayMode[categoryKey];
+  // The app's own tile switches (APP.onTileDrill - Japanese: drill by meaning).
+  if (APP.onTileDrill) APP.onTileDrill(categoryKey, cat);
   vocabReversed = !!vocabTileReversedMode[categoryKey];
   typeAnswerMode = !!vocabTileTypeAnswerMode[categoryKey];
   listenMode = !!vocabTileListenMode[categoryKey] && soundAllowed();
@@ -1371,6 +1436,9 @@ function renderNavBack() {
 }
 
 function showScreen(id) {
+  // Anything an app does on leaving a screen (APP.beforeShowScreen -
+  // Japanese: stop the sentence-order playback, turn sideways).
+  if (APP.beforeShowScreen) APP.beforeShowScreen(id);
   if (id === 'match-settings' || (APP.screens[id] && APP.screens[id].vocabRoot)) lastVocabRoot = id;
   navRecord(id);
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
@@ -1380,8 +1448,12 @@ function showScreen(id) {
   const settingsBtn = document.getElementById('settings-btn');
   if (settingsBtn) settingsBtn.classList.toggle('active', id === 'settings');
   // Nav pills: the screen's own (APP.screens), else the word-list tab. Drill
-  // and results light whichever pill the drill was started from.
-  if (id !== 'settings') {
+  // and results light whichever pill the drill was started from. An app can
+  // decide it all itself (APP.pillFor - Japanese: the section you're in).
+  if (APP.pillFor) {
+    const pillId = APP.pillFor(id);
+    const p = pillId && document.getElementById(pillId); if (p) p.classList.add('active');
+  } else if (id !== 'settings') {
     const origin = (id === 'drill' || id === 'results') ? lastSettingsScreen : id;
     const sc = APP.screens[origin];
     const pillId = (sc && sc.pill) ? (typeof sc.pill === 'function' ? sc.pill() : sc.pill) : 'nav-match';
@@ -1400,6 +1472,9 @@ function showScreen(id) {
     navMatch.classList.remove('sub-screen');
     navMatch.onclick = tryResumeMatch;
   }
+  // Anything else an app's tabs show (APP.onShowScreen - Japanese: すうじ
+  // becomes Resume while a numbers drill is waiting).
+  if (APP.onShowScreen) APP.onShowScreen(id);
   if (id === 'vocab-tile-selection' && vocabTileCategory) refreshKanaScoreShading('vocab-tile-grid');
   else if (APP.screens[id] && APP.screens[id].onShow) APP.screens[id].onShow();
   // Groups bars refresh here too (2026-10-10): they used to update only when
@@ -1418,6 +1493,9 @@ function goBackToSettings() {
   // (fresh visits go through their own show*Selection() functions directly).
   // Clear whatever was selected so the just-updated score shading is visible
   // immediately, instead of hidden behind leftover "selected" highlighting.
+  // An app clears its own selection screens (APP.clearSelection -
+  // Japanese's kana tables and kanji).
+  if (APP.clearSelection) APP.clearSelection(lastSettingsScreen);
   if (lastSettingsScreen === 'vocab-tile-selection' && vocabTileCategory) {
     vocabTileSelected[vocabTileCategory].clear();
     buildVocabTileGrid(vocabTileCategory);
@@ -1478,9 +1556,13 @@ function goBackToSettings() {
 
 
 
+// With no deck, an app can have a default one (APP.defaultDeck: build, and
+// the screen Back returns to - Japanese: the kana from the kana settings).
 function startDrill(customDeck, deckBuilder) {
-  lastDeckBuilder = deckBuilder || (() => shuffle(customDeck));
-  deck = customDeck;
+  const fallback = !customDeck && APP.defaultDeck;
+  if (fallback) lastSettingsScreen = APP.defaultDeck.screen;
+  lastDeckBuilder = deckBuilder || (customDeck ? (() => shuffle(customDeck)) : null);
+  deck = customDeck || (fallback ? APP.defaultDeck.build() : customDeck);
   current = 0; score = 0; wrong = 0; hints = 0; answered = false; missed = []; missedItems = [];
   showScreen('drill');
   renderQuestion();
@@ -1488,6 +1570,7 @@ function startDrill(customDeck, deckBuilder) {
 
 function drillAgain() {
   if (lastDeckBuilder) startDrill(lastDeckBuilder());
+  else if (APP.defaultDeck) startDrill();
 }
 
 let missedItems = []; // stores full question objects for number challenge missed items
@@ -1498,7 +1581,10 @@ function drillMissed() {
   // meanings (e.g. 火 = Tuesday in one section, fire in another) don't pull
   // in both when only one was actually missed.
   const missedSet = new Set(missed);
-  startDrill(shuffle(missedItems.filter(q => missedSet.has(q.char + '|' + q.answer))));
+  // Questions the app builds again itself (APP.rebuildMissed - Japanese's
+  // kana and kanji), then the ones kept as they were asked.
+  const rebuilt = APP.rebuildMissed ? APP.rebuildMissed(missedSet) : [];
+  startDrill(shuffle([...rebuilt, ...missedItems.filter(q => missedSet.has(q.char + '|' + q.answer))]));
 }
 
 const SPEECH_SUPPORTED = ('speechSynthesis' in window);
@@ -2154,14 +2240,21 @@ function tryRestoreDrillSession() {
   renderQuestion();
 }
 
+// Scored: any question with a type, unless the type says otherwise
+// (tracked - Japanese: kana only from the kana tables).
 function isTrackedItem(q) {
-  return !!questionType(q);
+  const t = questionType(q);
+  return !!t && (!t.tracked || t.tracked(q));
 }
 
 // The score key: the word and its English together ('jp|en'), so two words
 // spelt alike with different meanings keep separate scores. Other kinds of
 // question give their own key (q.scoreKey).
 function getScoreKey(q) {
+  // A type can say (scoreKey - Japanese: kanji by meaning, one shared key
+  // for all numbers).
+  const t = questionType(q);
+  if (t && t.scoreKey) return t.scoreKey(q);
   if (q.scoreKey) return q.scoreKey; // verb / contraction cells
   return q.char + '|' + (q.answerEn || q.answer);
 }
@@ -2580,12 +2673,27 @@ function refreshRandomView() {
   setupCatBar(document.getElementById('theme-all-vocab-swatch'), getCategoryBandCounts(getCoreVocabPool()));
   setupCatBar(document.getElementById('theme-weakest-vocab-swatch'), getCategoryBandCounts(getWeakestVocabItems(20)));
   setupCatBar(document.getElementById('theme-untested-vocab-swatch'), getCategoryBandCounts(getUntestedVocabItems()));
-  // The app's own random drills (APP.randomDrills - Sounds alike for Portuguese).
-  Object.entries(APP.randomDrills || {}).forEach(([key, d]) => setupCatBar(document.getElementById('theme-' + key + '-swatch'), getCategoryBandCounts(d.items())));
+  // The app's own random drills (APP.randomDrills - Sounds alike for
+  // Portuguese; levels, verb forms, particles... for Japanese). Each has its
+  // words (items) for the score bar (swatch, default theme-<key>-swatch); a
+  // drill with a setting (shown) has its card hidden when it's off, and
+  // stops being the choice.
+  Object.entries(APP.randomDrills || {}).forEach(([key, d]) => {
+    if (d.shown) {
+      const on = d.shown();
+      const card = document.getElementById(d.card);
+      if (card) card.style.display = on ? '' : 'none';
+      if (!on) { if (randomChoice === key) randomChoice = null; return; }
+    }
+    setupCatBar(document.getElementById(d.swatch || 'theme-' + key + '-swatch'), getCategoryBandCounts(d.items()));
+  });
     // How many are still untested, e.g. "(610 of 872)". Counted by score key,
     // so a word listed in two topics counts once.
   const untestedEl = document.getElementById('untested-count');
-  if (untestedEl) {
+  // An app can word it itself (APP.untestedCount - Japanese splits it
+  // into taught, tourist, untaught).
+  if (untestedEl && APP.untestedCount) untestedEl.textContent = APP.untestedCount();
+  else if (untestedEl) {
     const uniq = list => new Set(list.map(i => i.jp + '|' + i.en)).size;
     const fmt = n => n.toLocaleString(tx('dates.locale'));
     untestedEl.textContent = tx('groups.untestedCount', { n: fmt(uniq(getUntestedVocabItems())), of: fmt(uniq(getAllVocabPool())) });
@@ -2612,6 +2720,15 @@ function updateRandomChoiceUI() {
   });
   const btn = document.getElementById('random-start-btn');
   if (btn) btn.disabled = !randomChoice;
+  // Switches that don't apply to the chosen drill fade (still tappable):
+  // a random drill lists them as notFor.
+  const drills = APP.randomDrills || {};
+  const ids = new Set(Object.values(drills).flatMap(d => d.notFor || []));
+  const notFor = (drills[randomChoice] && drills[randomChoice].notFor) || [];
+  ids.forEach(id => {
+    const card = document.getElementById(id);
+    if (card) card.classList.toggle('not-for-choice', notFor.includes(id));
+  });
 }
 function startSelectedRandom() {
   applyRandomModes();

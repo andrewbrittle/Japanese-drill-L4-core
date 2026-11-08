@@ -5,6 +5,10 @@
 // Split out of app.js on 2026-11-07 (refactor step 6); code unchanged.
 
 function getSpeechText(q) {
+  // A type can say what's spoken (speechText - Japanese: a kanji's reading,
+  // a counter's kana).
+  const t = questionType(q);
+  if (t && t.speechText) return t.speechText(q);
   return q.speakAs || q.char;
 }
 
@@ -53,12 +57,18 @@ function renderListenPrompt(q, charDisplay, promptText) {
   document.getElementById('q-prompt').textContent = promptText;
   const speakBtn = document.getElementById('speak-btn');
   if (speakBtn) speakBtn.style.display = 'none';
+  // Japanese's romaji button would give the word away.
+  const romajiBtn = document.getElementById('romaji-btn');
+  if (romajiBtn) romajiBtn.style.display = 'none';
   setTimeout(() => { if (deck[current] === q && !answered) say(); }, 120);
 }
 
 // After answering a listening question, show the word that was played
 // (tap it to hear it again).
 function revealListenWord(q) {
+  // A type can show its own (revealListen - Japanese: small っ shows the word).
+  const t = questionType(q);
+  if (t && t.revealListen) { t.revealListen(q); return; }
   const charDisplay = document.getElementById('q-char');
   if (!charDisplay || !charDisplay.querySelector('.listen-play')) return;
   charDisplay.textContent = q.char;
@@ -393,17 +403,26 @@ let currentMatchLevel = 'theme';
 
 
 
+// An app with level pills of its own (APP.matchLevel - Japanese's L1/L2,
+// L3, L4, Untaught, Tourist): pick turns a tap into the level to show (or
+// null: nothing to show - a switched-off page, or Grammar, its own tab);
+// pills lights them; lists are the levels shown as a list of word lists.
 function setMatchLevel(level) {
+  const ML = APP.matchLevel;
+  if (ML) { level = ML.pick(level); if (level === null) return; }
   currentMatchLevel = level;
   document.querySelectorAll('#vocab-level-filter-row [data-section]').forEach(p => p.classList.toggle('active', p.dataset.section === level));
   document.getElementById('level-pill-theme').classList.toggle('active', level === 'theme');
   const randomPill = document.getElementById('level-pill-random');
   if (randomPill) randomPill.classList.toggle('active', level === 'random');
+  if (ML && ML.pills) ML.pills(level);
   document.getElementById('vocab-level-filter-row').classList.toggle('showing-theme-colours', level === 'theme');
+  const optRow = document.getElementById('vocab-optional-filter-row');
+  if (optRow) optRow.classList.toggle('showing-theme-colours', level === 'theme');
     // Extra tiers of vocabulary (the Japanese app's Untaught and Andrew lists)
     // reuse this same generic list view: a category with the right level in
     // VOCAB shows up automatically, no hand-built card needed.
-  document.getElementById('match-vocab-view').style.display = SECTION_KEYS.includes(level) ? 'flex' : 'none';
+  document.getElementById('match-vocab-view').style.display = (SECTION_KEYS.includes(level) || (ML && ML.lists.includes(level))) ? 'flex' : 'none';
   document.getElementById('match-theme-view').style.display = level === 'theme' ? 'flex' : 'none';
   document.getElementById('match-random-view').style.display = level === 'random' ? 'flex' : 'none';
   if (level === 'theme') refreshThemeCategorySwatches();
@@ -479,6 +498,8 @@ function buildCategoryTile(key) {
 function buildMatchCategoryList() {
   const container = document.getElementById('match-category-list');
   container.innerHTML = '';
+  // An app's own levels list themselves (APP.matchLevel.list).
+  if (APP.matchLevel && APP.matchLevel.lists.includes(currentMatchLevel)) { APP.matchLevel.list(container, currentMatchLevel); return; }
   if (!SECTION_KEYS.includes(currentMatchLevel)) return;
   // Topic pills (Portuguese build): the categories whose section matches the
   // pill, in vocab.js order, then any private word lists for that section
@@ -654,7 +675,11 @@ function buildVocabReadingDeck(items, groupKey, distractorPool) {
 
 // One word question - used by tile selection and the random decks alike.
 // Options carry both sides; renderQuestion decides which side is asked.
+// A language's words can make their own questions (the word type's build -
+// Japanese: the answer is the reading, with "also written" and the kanji
+// reading breakdown).
 function buildWordQuestion(item, pool, groupKey) {
+  if (QUESTION_TYPES.word.build) return QUESTION_TYPES.word.build(item, pool, groupKey);
   const distractorItems = pickDistractorItems(pool, item, 3);
   const allItems = shuffle([item, ...distractorItems]);
   return {
