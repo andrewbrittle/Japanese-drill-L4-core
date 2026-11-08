@@ -1638,15 +1638,6 @@
       <div class="toggle" id="show-untaught-toggle"></div>
     </div>
 
-    <!-- Hidden 2026-10-06 until there is something in Andrew mode again - remove display:none to bring the toggle back. -->
-    <div class="group-card dimmed" id="show-andrew-mode-toggle-card" onclick="toggleShowAndrewMode()" style="cursor:pointer; display:none;">
-      <div class="group-info">
-        <div class="group-name">Activate Andrew mode</div>
-        <div class="group-count">Staging area for whatever's next — currently empty</div>
-      </div>
-      <div class="toggle" id="show-andrew-mode-toggle"></div>
-    </div>
-
     <div class="group-card" id="backup-scores-card" style="cursor:default;">
       <div class="group-info">
         <div class="group-name">Back up my progress</div>
@@ -1694,7 +1685,7 @@
 
     <div style="text-align:center; font-size:12px; color:var(--accent); margin-top:0.75rem;">Any problems: Andrew 07973 835165</div>
     <div style="text-align:center; font-size:11px; color:var(--text-dim); margin-top:0.5rem;">Kana stroke order from <a href="https://kanjivg.tagaini.net/" target="_blank" rel="noopener" style="color:inherit;">KanjiVG</a> © Ulrich Apel, CC BY-SA 3.0.</div>
-    <div style="text-align:center; font-size:12px; font-weight:600; color:var(--text-dim); margin-top:0.75rem;">L4 · v261106.001 · core test 2611081008</div>
+    <div style="text-align:center; font-size:12px; font-weight:600; color:var(--text-dim); margin-top:0.75rem;">L4 · v261106.001 · core test 2611081054</div>
   </div>
 
   <!-- Katakana settings screen -->
@@ -2247,10 +2238,8 @@
          submitVocabSearch - it scans whatever's currently visible via
          itemTierVisible, not just the active tab), so this row itself is
          permanent now, unlike before Search existed when it only held the
-         Andrew pill and was hidden entirely off Andrew mode. The pill still
-         gets individually hidden by applyShowAndrewModeVisibility - Search's
-         flex:1 fills the row on its own when that happens, and yields space
-         at the end once the pill's back. -->
+         Andrew pill and was hidden entirely off Andrew mode (removed 2026-11-08;
+         the row is Search's own now). -->
     <div class="level-filter-row andrew-row" id="vocab-andrew-filter-row">
       <!-- Search (2026-10-13): × inside the box clears it; the search button
            is its own round button at the end of the row. -->
@@ -2266,12 +2255,6 @@
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
         </button>
-      <!-- Own row, hidden by default so nobody else ever sees it unless they
-           switch "Andrew mode" on themselves. Currently empty - its last
-           content (Materials) moved into Untaught above on 2026-08-31 -
-           that's the expected steady state between experiments, ready for
-           whatever L3 content lands here next. -->
-      <button class="level-pill" id="level-pill-andrew" onclick="setMatchLevel('andrew')" style="display:none;">Andrew</button>
     </div>
     <div class="vocab-search-message" id="vocab-search-message" style="display:none;"></div>
 
@@ -2501,6 +2484,15 @@ window.LANG = ja;
 <script defer src="ja/app.js"></script>
 <script defer src="core/core.js"></script>
 <script defer src="core/questions.js"></script>
+<script defer src="ja/numbers.js"></script>
+<script defer src="ja/forms.js"></script>
+<script defer src="ja/notes.js"></script>
+<script defer src="ja/reading.js"></script>
+<script defer src="ja/sentences.js"></script>
+<script defer src="ja/builder.js"></script>
+<script defer src="ja/daily.js"></script>
+<script defer src="ja/kana.js"></script>
+<script defer src="ja/kanji.js"></script>
 <script defer src="ja/legacy.js"></script>
 <script defer src="ja/questions.js"></script>
 </body>

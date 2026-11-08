@@ -14,7 +14,7 @@ window.APP = {
   vocabPills: [],
 
   // The app's own settings, with their defaults, beside the core's.
-  settings: { showKanji: true, showExtra: true, showAndrewMode: false, showUntaught: null, showTourist: null, gbpJpyRate: 215, tileShowRomaji: false },
+  settings: { showKanji: true, showExtra: true, showUntaught: null, showTourist: null, gbpJpyRate: 215, tileShowRomaji: false },
   // Drill by meaning, beside the core's reversed / type / listen.
   randomModes: { meaning: false },
   // Filled in by ja/legacy.js once its reference pages exist.
@@ -56,7 +56,7 @@ window.APP = {
     }),
   untestedCount: () => jaUntestedCount(),
   // The Vocab page's level pills and their lists (see jaPickMatchLevel).
-  matchLevel: { pick: l => jaPickMatchLevel(l), pills: l => jaMatchLevelPills(l), lists: ['l12', 1, 2, 3, 4, 'andrew', 'untaught', 'tourist'], list: (c, l) => jaLevelList(c, l) },
+  matchLevel: { pick: l => jaPickMatchLevel(l), pills: l => jaMatchLevelPills(l), lists: ['l12', 1, 2, 3, 4, 'untaught', 'tourist'], list: (c, l) => jaLevelList(c, l) },
   // Word lists: Latest words defaults to the last week; Groups sorted by
   // name; what Back calls each word-list view.
   // Optional tiers: words shown only when their setting is on. The first
@@ -64,7 +64,6 @@ window.APP = {
   tiers: [
     { when: t => t.includes('untaught') && t.includes('tourist'), setting: 'showTourist' },
     { when: t => t.includes('untaught'), setting: 'showUntaught' },
-    { when: t => t.includes('andrew'), setting: 'showAndrewMode' },
     { when: t => t.includes('genki') && !t.includes('taught'), setting: 'showUntaught' },
   ],
   pickUntested: () => pickUntested20(),
@@ -154,9 +153,9 @@ window.APP = {
   privateVocab: { format: 'jp-drill-private-vocab', wordOk: it => typeof it.jp === 'string' && typeof it.romaji === 'string' },
   groupOrder: 'alphabetical',
   vocabLabel: 'Vocabulary',
-  matchLevelLabels: { grammar: 'Grammar', l12: 'L1/L2', 1: 'L1', 2: 'L2', 3: 'L3', 4: 'L4', tourist: 'Tourist', untaught: 'Untaught', andrew: 'Andrew' },
+  matchLevelLabels: { grammar: 'Grammar', l12: 'L1/L2', 1: 'L1', 2: 'L2', 3: 'L3', 4: 'L4', tourist: 'Tourist', untaught: 'Untaught' },
   // Japanese's own settings, applied with the core's.
-  onApplySettings: [() => applyShowKanjiVisibility(), () => applyShowAndrewModeVisibility(), () => applyShowUntaughtVisibility(), () => applyShowTouristVisibility()],
+  onApplySettings: [() => applyShowKanjiVisibility(), () => applyShowUntaughtVisibility(), () => applyShowTouristVisibility()],
   voiceNotes: {
     fallback: '',
     none: "This device doesn't seem to have a Japanese voice installed - add one in your phone's text-to-speech / spoken content settings.",

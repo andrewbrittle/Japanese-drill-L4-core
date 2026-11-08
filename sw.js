@@ -15,7 +15,7 @@
 // LEVEL 4 APP: its own cache prefix, jpl4-. The Level 3 app (same web
 // address) deletes every cache starting jp-drill- except its own, and this
 // app deletes only jpl4- ones, so neither clears the other's offline copy.
-const CACHE_VERSION = 'jpl4-core-v261106-001-2611081008';
+const CACHE_VERSION = 'jpl4-core-v261106-001-2611081054';
 
 const PRECACHE_URLS = [
   './',
@@ -25,10 +25,19 @@ const PRECACHE_URLS = [
   './core/questions.js',
   './core/text.js',
   './ja/app.js',
+  './ja/builder.js',
+  './ja/daily.js',
+  './ja/forms.js',
   './ja/grammar.js',
   './ja/kana-strokes.js',
+  './ja/kana.js',
+  './ja/kanji.js',
   './ja/legacy.js',
+  './ja/notes.js',
+  './ja/numbers.js',
   './ja/questions.js',
+  './ja/reading.js',
+  './ja/sentences.js',
   './ja/vocab.js',
   './lang/ja.js',
   './ui/en.js',

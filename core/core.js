@@ -725,6 +725,7 @@ function pickDistractorItems(pool, correctItem, count) {
 // no sections/pills needed since these are single unordered lists.
 let vocabTileCategory = null;
 const vocabTileSelected = {};
+const vocabTileListKey = {}; // categoryKey -> the list its selection belongs to (see showVocabTileSelection)
 const vocabTileReversedMode = {}; // categoryKey -> boolean, remembered independently per category
 const vocabTileTypeAnswerMode = {}; // same idea, for the typed-answer toggle (2026-09-22)
 const vocabTileListenMode = {}; // same idea, for the listening toggle (2026-10-07)
@@ -808,6 +809,17 @@ function showVocabTileSelection(categoryKey) {
   vocabTileCategory = categoryKey;
   if (!vocabTileSelected[categoryKey]) vocabTileSelected[categoryKey] = new Set();
   const cat = resolveVocabCategory(categoryKey);
+  // A selection is kept by position in the list, so it only means the same
+  // words while the list is the same. If the list has changed since (a
+  // setting such as Japanese's Tourist or Untaught words switched off, or new
+  // words added), the old selection is cleared rather than pointing at the
+  // wrong words - or past the end, which once left Drill doing nothing.
+  const listKey = cat.items.map(i => i.jp + '|' + i.en).join('\n');
+  if (vocabTileListKey[categoryKey] !== undefined && vocabTileListKey[categoryKey] !== listKey) {
+    vocabTileSelected[categoryKey].clear();
+    vocabTileRandomMode[categoryKey] = false;
+  }
+  vocabTileListKey[categoryKey] = listKey;
   document.getElementById('vocab-tile-selection-title').textContent = cat.label;
   const refLinks = document.getElementById('vocab-tile-selection-ref-links');
   if (refLinks) {
