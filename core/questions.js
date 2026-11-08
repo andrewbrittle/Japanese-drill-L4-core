@@ -184,11 +184,19 @@ function renderQuestion() {
   const promptEl = document.getElementById('q-prompt');
 
   // Anything without a registered type is drawn as a word, as before.
+  // A type's badge can depend on the question (badge, badgeClass as
+  // functions); a badged type hides the "where it was seen" card unless it
+  // keeps it (keepsContext - Japanese's words have badges).
   const type = questionType(q) || QUESTION_TYPES.word;
-  if (type.badge) {
-    badge.textContent = type.badge;
-    if (contextCard) contextCard.style.display = 'none';
+  const badgeText = typeof type.badge === 'function' ? type.badge(q) : type.badge;
+  if (badgeText) {
+    badge.textContent = badgeText;
+    if (contextCard && !type.keepsContext) contextCard.style.display = 'none';
   }
+  if (type.badgeClass) badge.className = 'type-badge type-' + (typeof type.badgeClass === 'function' ? type.badgeClass(q) : type.badgeClass);
+  // Anything an app shows with every question (Japanese: "also written",
+  // the romaji button, the counter-quiz reminder) - APP.beforeQuestion.
+  if (APP.beforeQuestion) APP.beforeQuestion(q, { charDisplay, container, promptEl, mode });
   type.render(q, { charDisplay, container, promptEl, mode });
 }
 
@@ -241,9 +249,12 @@ function finishAnswer() {
   nextBtn.innerHTML = (current + 1 < deck.length ? tx('drill.next') : tx('drill.seeResults')) + `<span class="kbd-hint">${tx('drill.keySpace')}</span>`;
 }
 
-function noteMissed(q) {
-  const missedKey = q.char + '|' + q.answer;
-  if (!missed.includes(missedKey)) { missed.push(missedKey); missedItems.push(q); }
+// key: what Drill missed only looks the question up by (default its char
+// and answer); keepItem false for questions an app rebuilds itself instead
+// (Japanese's kana and kanji - see the type's missedItem).
+function noteMissed(q, key, keepItem = true) {
+  const missedKey = key || q.char + '|' + q.answer;
+  if (!missed.includes(missedKey)) { missed.push(missedKey); if (keepItem) missedItems.push(q); }
 }
 
 function choose(btn, selectedVal, answer, char) {
@@ -254,25 +265,32 @@ function choose(btn, selectedVal, answer, char) {
     if (b.dataset.value === answer) b.classList.add('correct');
   });
   const q = deck[current];
+  const type = questionType(q) || QUESTION_TYPES.word;
   const fb = document.getElementById('q-feedback');
   const isCorrect = selectedVal === answer;
   recordKanaResult(q, isCorrect);
   revealListenWord(q);
   revealQuestion(q);
-  // Forward questions: name the Portuguese word alongside the meaning, so a
-  // listening answer still shows what was said.
-  const pair = (!questionType(q).namesWord || answer === q.char) ? '' : ` — ${escapeHtmlText(q.char)}`;
+  // What follows "Correct!": the type can say (feedbackExtra - Japanese: the
+  // hint, a kanji's example word, "Normally shown as"). Otherwise forward
+  // questions name the word alongside the meaning, so a listening answer
+  // still shows what was said, then the word's notes.
+  const extra = type.feedbackExtra ? type.feedbackExtra(q)
+    : ((!type.namesWord || answer === q.char) ? '' : ` — ${escapeHtmlText(q.char)}`) + answerNotesHtml(q);
+  // How the right answer is shown (answerHtml - Japanese: hiragana for a
+  // katakana question, small kana in Japanese answers).
+  const shown = type.answerHtml ? type.answerHtml(q, answer) : escapeHtmlText(answer);
   if (isCorrect) {
     score++;
     btn.classList.add('correct');
-    fb.innerHTML = tx('drill.correct') + pair + answerNotesHtml(q);
+    fb.innerHTML = tx('drill.correct') + extra;
     fb.className = 'feedback good';
   } else {
     btn.classList.add('wrong');
-    fb.innerHTML = tx('drill.notQuite', { a: escapeHtmlText(answer) }) + pair + answerNotesHtml(q);
+    fb.innerHTML = tx('drill.notQuite', { a: shown }) + extra;
     fb.className = 'feedback bad';
     wrong++;
-    noteMissed(q);
+    noteMissed(q, char + '|' + answer, type.missedItem !== false);
   }
   finishAnswer();
 }

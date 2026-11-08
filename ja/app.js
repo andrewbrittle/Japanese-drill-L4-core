@@ -67,10 +67,9 @@ window.APP = {
     save: () => ({ drillByMeaning, reversed, showHiraganaOnKatakana, showHiraganaOnKanji }),
     restore: s => { drillByMeaning = !!s.drillByMeaning; reversed = !!s.reversed; showHiraganaOnKatakana = !!s.showHiraganaOnKatakana; showHiraganaOnKanji = !!s.showHiraganaOnKanji; },
   },
-  // Typing: the box for typing Japanese (not romaji) is styled as Japanese;
-  // counter questions are scored in small steps, like numbers and times.
+  // Typing: the box for typing Japanese (not romaji) is styled as Japanese.
+  // (Question kinds, and how each is scored, are in ja/questions.js.)
   targetInputClass: 'type-answer-jp',
-  consistencyKinds: ['counter'],
   // Back closes the daily card or the verb-forms popup first; returns to a
   // screen exactly as it was left; a reference opened from the grammar
   // notes goes back to the grammar page.
@@ -81,6 +80,9 @@ window.APP = {
     return true;
   },
   navRestore: target => NAV_RESTORE[target],
+  // Shown with every question: "also written", the romaji button, which
+  // counters are in play - see ja/questions.js.
+  beforeQuestion: (q, ui) => jaBeforeQuestion(q, ui),
   refBack: t => (t === 'grammar-notes-hub' || t === 'grammar-notes-hub-l3') ? () => showGrammarPage() : null,
   groupRandomPick: 20,
   tapToHearIn: key => ROMAJI_VIEW_CATEGORIES.includes(key),
