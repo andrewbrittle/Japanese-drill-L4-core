@@ -1,0 +1,2506 @@
+<!DOCTYPE html>
+<html lang="en" translate="no" class="notranslate">
+<head>
+<meta charset="UTF-8">
+<!-- Never auto-translate (2026-10-08): a phone set to translate Japanese pages turned
+     は into "teeth", を into "of", the sentences into English. -->
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Japanese Drill L4 (core test)</title>
+<!-- PWA: manifest + icons (Add to Home Screen support) -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f0f0f">
+<link rel="icon" href="icons/icon-192.png">
+<!-- iOS: Safari ignores the manifest for home-screen installs, needs its own tags -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="JP Drill 4">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  /* Self-hosted rather than pulled live from Google Fonts - that meant every
+     load depended on a network request succeeding fast enough, and on a slow
+     or blocked connection the browser would silently substitute whatever
+     Japanese font the device already had, which for some system fonts
+     renders characters like さ/き with their strokes joined into a single
+     flowing stroke instead of the separate, correct component strokes. Since
+     stroke shape is the whole point of a kana-learning app, this can't be
+     allowed to depend on a live third-party request succeeding. */
+  @font-face {
+    font-family: 'BIZ UDPGothic';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('fonts/BizUDPGothic-Regular.ttf') format('truetype');
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Andrew flagged the Collections/Level 1/Level 2/Untaught pill text
+     looking slightly bigger than before, right after the pill row switched
+     from wrapping onto a second line to scrolling horizontally in one line
+     (v260831.015). No font-size anywhere in that row actually changed -
+     this is Android Chrome's automatic "font boosting" (aka text
+     autosizer): a heuristic that inflates rendered text size in a block it
+     judges too narrow for its column, and a nowrap+overflow-x row reads
+     differently to that heuristic than a wrapping one did, which is
+     exactly the kind of layout-triggered, no-CSS-change side effect this
+     symptom points to. Every font-size in this app is already deliberately
+     chosen throughout - there's no reason for the browser to be silently
+     adjusting any of them - so disabled globally here rather than patched
+     just on this one row, since the same heuristic could just as easily
+     surface somewhere else next (the Grammar notes cards' new line-height
+     change is another recent candidate). Standard fix, no visual effect on
+     desktop or on text sizes that were never being boosted anyway. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  :root {
+    /* Sentence order slots 1-7 (2026-10-09); also the daily card's panel colours. */
+    --slot-1:#D98BA5; --slot-2:#6FC3D9; --slot-3:#B79AE0; --slot-4:#4FB3A9; --slot-5:#C99563; --slot-6:#8FCB6B; --slot-7:#E3C468;
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    /* CRITICAL FIX (2026-09-12): .opt:hover used to hardcode this exact
+       value inline instead of a theme variable - harmless here (dark
+       text stays light-on-dark either way), but in the light theme below
+       the same hardcoded hex put near-black hover text on a near-black
+       hover background, making every answer option briefly unreadable on
+       hover. Pulled out as a var so each theme can set its own value;
+       this one is unchanged from the old hardcoded hex, so dark mode
+       looks pixel-identical to before. */
+    --opt-hover-bg: #2a2a2a;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.16);
+    --text: #f8f6f2;
+    --text-muted: rgba(248,246,242,0.66);
+    --text-dim: rgba(248,246,242,0.42);
+    --text-note: rgba(248,246,242,0.86); /* grammar-card narrative text (2026-10-15) */
+    --accent: #e8c97a;
+    --accent-dim: rgba(232,201,122,0.12);
+    --green: #6fcf97;
+    --green-dim: rgba(111,207,151,0.12);
+    --red: #eb5757;
+    --red-dim: rgba(235,87,87,0.12);
+    --blue: #7eb8f7;
+    --blue-dim: rgba(126,184,247,0.1);
+    --purple: #b39ddb;
+    --purple-dim: rgba(179,157,219,0.12);
+    --radius: 10px;
+    --radius-lg: 16px;
+
+    /* Confidence shading - single source of truth for every score-* and
+       cat-conf-* rule below (item tiles, numbers/times swatches, category
+       swatches), so all three stay in sync automatically instead of each
+       repeating the same eight colours on their own. Deliberately not
+       overridden in the light theme below - these are meant to read as a
+       consistent red/green regardless of theme, the same way they always
+       have, not to shift with the surface colours. This is also the one
+       place a future "colourblind-friendly palette" setting would need to
+       change, if that's ever added. */
+    --conf-neg3: rgba(235,87,87,0.45);
+    --conf-neg2: rgba(235,87,87,0.30);
+    --conf-neg1: rgba(235,87,87,0.15);
+    --conf-neutral: rgba(126,184,247,0.14);
+    --conf-pos1: rgba(111,207,151,0.15);
+    --conf-pos2: rgba(111,207,151,0.30);
+    --conf-pos3: rgba(111,207,151,0.45);
+    --conf-pos4: rgba(111,207,151,0.60);
+
+    /* Category-tile confidence BAR vars (2026-09-22) - same hue families as
+       the --conf-* swatch fills just above, but boosted opacity so a thin
+       stacked-bar segment (buildCategoryTile's per-category spread bar)
+       reads clearly at a few px tall, where the pale swatch alphas would
+       wash out. Values carried over as-is from the kanji-cards app's own
+       progress bar, already tuned for exactly this use rather than
+       reinvented here. */
+    --conf-neg3-bar: rgba(235,87,87,0.92);
+    --conf-neg2-bar: rgba(235,87,87,0.68);
+    --conf-neg1-bar: rgba(235,87,87,0.42);
+    --conf-neutral-bar: rgba(126,184,247,0.55);
+    --conf-pos1-bar: rgba(111,207,151,0.42);
+    --conf-pos2-bar: rgba(111,207,151,0.65);
+    --conf-pos3-bar: rgba(111,207,151,0.85);
+    --conf-pos4-bar: #6fcf97;
+    --conf-untested-bar: rgba(255,255,255,0.38);
+  }
+
+  /* Light theme - opt-in only via Settings, dark (the :root values above)
+     stays the default for everyone unless they switch this on themselves. */
+  :root[data-theme="light"] {
+    --slot-1:#B23E63; --slot-2:#2C7A94; --slot-3:#6A4FA0; --slot-4:#1E7F73; --slot-5:#8A5A2E; --slot-6:#4E8A2C; --slot-7:#9A7A12;
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --surface2: #efece4;
+    /* See CRITICAL FIX (2026-09-12) above the dark --opt-hover-bg - this is
+       the light-theme value that was missing entirely before, which is
+       what caused the bug. */
+    --opt-hover-bg: #e3ddd0;
+    --border: rgba(0,0,0,0.10);
+    --border-hover: rgba(0,0,0,0.20);
+    --text: #1a1a1a;
+    --text-muted: rgba(26,26,26,0.66);
+    --text-dim: rgba(26,26,26,0.45);
+    --text-note: rgba(26,26,26,0.84);
+    --accent: #a9740f;
+    --accent-dim: rgba(169,116,15,0.12);
+    --green: #2f9e5c;
+    --green-dim: rgba(47,158,92,0.12);
+    --red: #c53d3d;
+    --red-dim: rgba(197,61,61,0.12);
+    --blue: #2f6fa8;
+    --blue-dim: rgba(47,111,168,0.10);
+    --purple: #7856a8;
+    --purple-dim: rgba(120,86,168,0.12);
+
+    --conf-neg3-bar: rgba(197,61,61,0.88);
+    --conf-neg2-bar: rgba(197,61,61,0.62);
+    --conf-neg1-bar: rgba(197,61,61,0.38);
+    --conf-neutral-bar: rgba(47,111,168,0.50);
+    --conf-pos1-bar: rgba(47,158,92,0.38);
+    --conf-pos2-bar: rgba(47,158,92,0.60);
+    --conf-pos3-bar: rgba(47,158,92,0.80);
+    --conf-pos4-bar: #2f9e5c;
+    --conf-untested-bar: rgba(0,0,0,0.30);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-weight: 500;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 1rem 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    background: var(--surface);
+  }
+
+  /* The "日本語" in the app's own logo/wordmark was missing this too - same
+     audit that turned up the pill bug. */
+  .app-heading { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; color: var(--text); font-family: 'BIZ UDPGothic', -apple-system, sans-serif; }
+  /* Name colours match the kanji apps (2026-10-18): the Japanese part gold,
+     the English part plain - 日本語 drill like 漢字 cards / 漢字 strokes. */
+  .app-heading span { color: var(--text); }
+  .app-heading .app-heading-tap { color: var(--accent); cursor: pointer; }
+
+  .nav-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; } /* tabs right-aligned under the ⚙ / sound buttons (2026-10-16) */
+  .app-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .head-btns { display: flex; gap: 8px; }
+
+  .settings-btn {
+    flex-shrink: 0;
+    width: 30px; height: 30px; border-radius: 99px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text-muted); font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .settings-btn:hover { border-color: var(--border-hover); color: var(--text); }
+  .settings-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .settings-btn.muted { color: var(--text-dim); }
+  /* Hold-to-peek on word tiles (2026-10-02): no iOS copy/Look Up bubble or
+     text selection while a card is held. */
+  #vocab-tile-grid .kana-ref-card { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #vocab-tile-grid .kana-ref-card.tile-peeking { border-color: var(--accent); }
+  /* Peek bubble - floats above (or beside) the held card, since a finger
+     covers the card itself. Never intercepts touches. */
+  .tile-peek-bubble {
+    position: fixed; z-index: 1000; pointer-events: none;
+    background: var(--surface); border: 2px solid var(--accent); border-radius: 12px;
+    padding: 10px 14px; text-align: center; max-width: min(78vw, 320px);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+  }
+  .tile-peek-bubble .peek-jp { font-family: 'BIZ UDPGothic', sans-serif; font-size: 26px; font-weight: 700; color: var(--text); line-height: 1.25; }
+  .tile-peek-bubble .peek-romaji { font-size: 17px; font-weight: 700; color: var(--accent); margin-top: 4px; }
+  .tile-peek-bubble .peek-en { font-size: 14px; color: var(--text-muted); margin-top: 3px; }
+  /* WHAT'S NEW FLAG (2026-09-01) - green instead of the usual gold .active
+     colour, deliberately reusing the same green already used for a correct
+     answer elsewhere, so it reads as "something to notice", not an error
+     state or a second "active screen" indicator. Cleared (see
+     showSettingsScreen()) the moment Settings is actually opened - reading
+     the changelog itself is optional, just noticing the cog and tapping it
+     is enough to clear it. Mutually exclusive with .active in practice:
+     the flag clears in the same click that makes the screen active, so
+     the two are never both painting the cog at once. */
+  .settings-btn.has-update { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+
+  .nav-pills { display: flex; gap: 6px; overflow-x: auto; flex-shrink: 0; scrollbar-width: none; }
+  .nav-pills::-webkit-scrollbar { display: none; }
+  /* Six tabs since 作文 (2026-10-23): a little tighter on narrow phones so
+     they all fit, and if they ever don't, the row scrolls instead of
+     pushing the first tab off the left edge. */
+  .nav-row .nav-pills { flex-shrink: 1; min-width: 0; }
+  .nav-pill {
+    padding: 5px 10px; border-radius: 99px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s; font-family: 'BIZ UDPGothic', -apple-system, sans-serif;
+    white-space: nowrap;
+  }
+  .nav-pill:hover { border-color: var(--border-hover); color: var(--text); }
+  .nav-pill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  @media (max-width: 400px) { .nav-pills { gap: 4px; } .nav-pill { padding: 5px 8px; } }
+  @media (max-width: 380px) { header { padding-left: 10px !important; padding-right: 10px !important; } .nav-pills { gap: 3px; } .nav-pill { padding: 5px 6px; font-size: 11.5px; } }
+  /* Was hardcoded #fff from back when the app was dark-only - white text on
+     "Back" stood out fine against a dark pill background, but on the light
+     theme it meant white-on-pale (or white-on-white when not also .active),
+     unreadable. var(--text) resolves to the same near-white in dark mode
+     (#f8f6f2, indistinguishable from #fff) and to dark text in light mode
+     (#1a1a1a), so this one line fixes it for both themes without needing a
+     separate light-theme override block. */
+  .nav-pill.sub-screen { color: var(--text); }
+
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 2rem 1rem; }
+
+  .screen { width: 100%; max-width: 480px; display: none; }
+  .screen.visible { display: flex; flex-direction: column; gap: 1rem; }
+
+  /* Settings screen. Reused as the reference-page title too (#vocab-ref-title/
+     #vocab-tile-selection-title), which occasionally shows a lone kanji label
+     baked into the title text (e.g. item-counters reference: "つ — general
+     things") - font-family added so that renders in the app's own Japanese
+     font rather than falling through to the system sans-serif stack, same
+     fix as .level-pill below. Short single-line headings either way, so this
+     is safe for the plain-English titles too (same reasoning as .nav-pill). */
+  .settings-title { font-size: 22px; font-weight: 700; text-align: center; font-family: 'BIZ UDPGothic', -apple-system, sans-serif; }
+  .settings-sub { font-size: 14px; font-weight: 500; color: var(--text-muted); text-align: center; }
+
+  #match-vocab-view, #match-theme-view, #match-random-view { display: flex; flex-direction: column; gap: 1rem; }
+
+  .group-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 0.875rem 1.25rem;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; transition: border-color 0.15s;
+    user-select: none;
+  }
+  .group-card:hover { border-color: var(--border-hover); }
+  .group-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+  /* Used for the "Highlight the meaning instead of sound" toggle specifically
+     - while Reversed mode is on, that toggle has no effect (reversed always
+     shows English regardless), so it's greyed out and unclickable rather
+     than left sitting there looking like it still does something. */
+  .group-card.disabled { opacity: 0.35; pointer-events: none; cursor: default; }
+  /* Visually secondary but still fully clickable - unlike .disabled above,
+     used for settings that currently gate nothing (Andrew mode between
+     experiments) rather than settings that are inert while some other
+     condition holds. */
+  .group-card.dimmed .group-name { opacity: 0.6; }
+  .group-card.not-for-choice { opacity: 0.45; }
+  .group-card.dimmed .group-count { opacity: 0.45; }
+  .group-card.emphasis { border-color: var(--accent); }
+  /* BUG FIX (2026-09-13): see the comment above backup-scores-card in the
+     HTML below for the full story - this switches just that one card from
+     .group-card's default horizontal row to a column, so the two buttons
+     stack under the description instead of squeezing it. */
+  #backup-scores-card, #private-vocab-card { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+
+  /* Select all / Random 20 side by side on the tile-selection screen - half
+     the vertical space of two full-width cards. When Random 20 is hidden
+     (regular, non-theme categories) it's removed from the flex flow entirely,
+     so Select all naturally reclaims the full row on its own. */
+  .tile-select-actions-row { display: flex; gap: 0.75rem; }
+  .tile-select-actions-row .group-card { flex: 1; min-width: 0; padding-left: 1rem; padding-right: 1rem; }
+  .tile-select-actions-row .group-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .group-info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+  .score-swatch {
+    flex: 0 0 auto; width: 48px; height: 48px; border-radius: var(--radius);
+    margin-left: 0.75rem; background: var(--surface2);
+  }
+  .score-swatch.score-neg3 { background: var(--conf-neg3); }
+  .score-swatch.score-neg2 { background: var(--conf-neg2); }
+  .score-swatch.score-neg1 { background: var(--conf-neg1); }
+  .score-swatch.score-neutral { background: var(--conf-neutral); }
+  .score-swatch.score-pos1 { background: var(--conf-pos1); }
+  .score-swatch.score-pos2 { background: var(--conf-pos2); }
+  .score-swatch.score-pos3 { background: var(--conf-pos3); }
+  .score-swatch.score-pos4 { background: var(--conf-pos4); }
+
+  /* Category-level confidence swatch (whole-category average, excluding
+     never-drilled items). Same 8-band thresholds and colours as every other
+     confidence display in the app (see confidenceBand) - distinct class
+     family (cat-conf-*, not score-*) purely so it can never collide with
+     the per-word/per-pool classes on the same element, not because the
+     bands or colours themselves differ. Boxed 48x48 side swatch, same shape
+     as .score-swatch - a full-card tint was tried first but looked too heavy
+     across a long stacked list of categories (the same "too dominating"
+     concern the Numbers/Times swatch itself was resized over), so this
+     matches that established boxed pattern instead of the kana-ref-card
+     full-tint one. */
+  .cat-swatch {
+    flex: 0 0 auto; width: 48px; height: 48px; border-radius: var(--radius);
+    margin-left: 0.75rem; background: var(--surface2);
+  }
+  .cat-swatch.cat-conf-neg3 { background: var(--conf-neg3); }
+  .cat-swatch.cat-conf-neg2 { background: var(--conf-neg2); }
+  .cat-swatch.cat-conf-neg1 { background: var(--conf-neg1); }
+  .cat-swatch.cat-conf-neutral { background: var(--conf-neutral); }
+  .cat-swatch.cat-conf-pos1 { background: var(--conf-pos1); }
+  .cat-swatch.cat-conf-pos2 { background: var(--conf-pos2); }
+  .cat-swatch.cat-conf-pos3 { background: var(--conf-pos3); }
+  .cat-swatch.cat-conf-pos4 { background: var(--conf-pos4); }
+
+  /* Category tile confidence SPREAD BAR (2026-09-22, trial) - replaces the
+     single-colour .cat-swatch average blob on the main category-browse
+     screen (buildCategoryTile) with a thin per-band stacked bar, so a
+     category that's evenly "OK" reads differently from one that's half
+     very-good/half very-bad averaging to the same middle colour. Scoped to
+     .cat-tile specifically (not .match-card-select generally) so the
+     Select-all/Random-20 cards, the Theme tab's static cards, and the "All
+     vocabulary"/"All kanji" swatches - all of which share .match-card-select
+     but are NOT built by buildCategoryTile - are completely untouched by
+     this trial. If it earns its keep, .cat-swatch and its cat-conf-* rules
+     above become dead code for these tiles (left in place for now since
+     other swatch users, e.g. .score-swatch, are unrelated). */
+  /* Specificity note: #match-category-list .match-card-select (below)
+     is an ID+class rule setting align-items:center for the old row
+     layout - a plain .cat-tile class alone can never outrank an ID
+     selector, however it's ordered in the file, so this needs to match
+     .match-card-select's own ID+class scoping to actually win. */
+  #match-category-list .match-card-select.cat-tile { flex-direction: column; align-items: stretch; gap: 0.5rem; padding-top: 1.05rem; padding-bottom: 1.05rem; }
+  /* Same restructure for Collections (#match-theme-view) and the
+     Numbers/Times/Counters cards below - both use .group-card rather
+     than .match-card-select, and .group-card's own base rule (a plain
+     class, not ID-scoped) is lower specificity than .group-card.cat-tile
+     here, so no ID-scoping trick is needed for this one. */
+  .group-card.cat-tile { flex-direction: column; align-items: stretch; gap: 0.5rem; padding-top: 1.05rem; padding-bottom: 1.05rem; }
+  .cat-tile-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .cat-tile-top .group-name { flex: 1; min-width: 0; }
+  .cat-tile-top .group-count { flex: 0 0 auto; white-space: nowrap; }
+  /* (2026-10-07) Numbers-screen cards have a sentence, not a short count, on
+     the right - on a narrow phone it squeezed the title into a column and
+     ran over it (Pixel 10 Pro XL). Stacked: title, then the description. */
+  .cat-tile-top.cat-tile-top-stack { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .cat-tile-top.cat-tile-top-stack .group-count { white-space: normal; }
+  .cat-bar {
+    display: flex; height: 8px; border-radius: 99px; overflow: hidden;
+    background: var(--surface2); cursor: pointer;
+  }
+  .cat-bar .seg { height: 100%; min-width: 3px; }
+  /* Production score (2026-10-22): a thin teal bar under the confidence bar on
+     category cards, and along the bottom of a word tile once it's been typed. */
+  .prod-bar { height: 3px; border-radius: 99px; background: var(--surface2); margin-top: 4px; overflow: hidden; }
+  .cat-tile .prod-bar { margin-top: -0.3rem; }
+  .prod-bar span, .prod-mark span { display: block; height: 100%; background: var(--slot-4); border-radius: 99px; }
+  .kana-ref-card { position: relative; }
+  .prod-mark { position: absolute; left: 6px; right: 6px; bottom: 3px; height: 3px; border-radius: 99px; background: color-mix(in srgb, var(--slot-4) 18%, transparent); overflow: hidden; pointer-events: none; }
+  .feedback.nearly { color: var(--slot-4); }
+  .type-answer-input.nearly, input.nearly { border-color: var(--slot-4) !important; }
+  /* Level 1/2 category cards need a flex row (text left, swatch right) to
+     hold this - scoped to #match-category-list only so the unrelated
+     "Random reading" card (also .match-card-select, but plain stacked text,
+     sits just below the list) isn't affected. */
+  #match-category-list .match-card-select { display: flex; align-items: center; justify-content: space-between; }
+  .group-name { font-size: 15px; font-weight: 700; }
+  .group-chars { font-size: 20px; font-weight: 600; letter-spacing: 4px; color: var(--text-muted); margin-top: 4px; font-family: 'BIZ UDPGothic', sans-serif; }
+  .group-count { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+
+  .toggle {
+    width: 40px; height: 22px; border-radius: 99px;
+    background: var(--surface2); border: 1px solid var(--border);
+    position: relative; transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--text-dim); transition: all 0.2s;
+  }
+  .group-card.selected .toggle { background: var(--accent); border-color: var(--accent); }
+  .group-card.selected .toggle::after { left: 21px; background: #0f0f0f; }
+
+  .start-btn {
+    padding: 14px; border-radius: var(--radius); width: 100%;
+    background: var(--accent); border: none; color: #0f0f0f;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .start-btn:hover { opacity: 0.88; }
+  .start-btn:disabled { opacity: 0.35; cursor: default; }
+
+  /* Drill screen */
+  .progress-wrap { display: flex; align-items: center; gap: 12px; }
+  .progress-bar-bg { flex: 1; height: 3px; background: var(--surface2); border-radius: 99px; }
+  .progress-bar-fill { height: 3px; border-radius: 99px; background: var(--accent); transition: width 0.3s; }
+  .progress-label { font-size: 12px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 2.5rem 2rem;
+    text-align: center;
+  }
+  .type-badge {
+    display: inline-block; font-size: 11px; padding: 3px 10px;
+    border-radius: 99px; margin-bottom: 1.25rem;
+    border: 1px solid;
+  }
+  .type-base { color: var(--text-muted); border-color: var(--border); }
+  .type-diacritic { color: var(--blue); border-color: rgba(126,184,247,0.3); background: var(--blue-dim); }
+  .type-kanji { color: var(--accent); border-color: rgba(232,201,122,0.3); background: var(--accent-dim); }
+  .type-survival { color: var(--purple); border-color: rgba(179,157,219,0.3); background: var(--purple-dim); }
+
+  .char-display { font-size: 100px; line-height: 1; margin-bottom: 0.5rem; font-family: 'BIZ UDPGothic', sans-serif; text-align: center; }
+  /* Small tsu (っ/ッ) and the second character of youon/loanword combos
+     (きゃ, ファ etc) - sized relative to whatever font-size they land in,
+     via em, so this works the same whether it's a 100px char-display or a
+     15px reference row. See markSmallKana() in the script for where this
+     is applied. */
+  .small-kana { font-size: 0.65em; }
+  .alt-form { font-size: 13px; font-weight: 600; color: var(--accent); text-align: center; margin-top: 0.15rem; margin-bottom: 0.5rem; font-family: 'BIZ UDPGothic', sans-serif; }
+  .counter-quiz-reminder { font-size: 12px; font-weight: 600; color: var(--text-muted); text-align: center; margin-top: 0.15rem; margin-bottom: 0.5rem; line-height: 1.9; }
+  .counter-quiz-reminder .cq-chip { display: inline-block; white-space: nowrap; border: 1px solid var(--border); border-radius: 99px; padding: 0 8px; margin: 0 2px; line-height: 1.6; }
+  .counter-quiz-reminder .cq-testing { white-space: nowrap; }
+  /* Materials-only "seen in context" card (see q-context-card in
+     renderQuestion) - a separate card between the main drill card and Next,
+     not a section inside the main card itself. Used to sit inline on the
+     main card (between the character and the audio button), which crowded
+     out the character on longer seenAs entries, and got duplicated down
+     near the feedback text so it would still be visible post-answer without
+     scrolling back up. Moving it to its own card between the feedback text
+     and Next solves both at once - it's out of the way of the character,
+     and it's still the next thing in view after answering, so the feedback
+     duplication (formerly .feedback-seen-as) is gone, not just relocated.
+     Shown from question-load, not gated on answering - it's real-world
+     context, not the reading, so it's not a spoiler. seenAs text is a real
+     Japanese sentence/sign fragment mixed with its English translation in
+     one string, so that line needs the JP font, not just isolated
+     characters - same treatment as .qneg-example-jp. The location/date and
+     filename lines are Latin-only so they stay on the system font stack. */
+  .context-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 1rem 1.25rem; text-align: left;
+  }
+  .context-card-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em;
+    text-transform: uppercase; color: var(--text-dim); margin-bottom: 0.5rem;
+  }
+  .seen-as-text { font-size: 13px; color: var(--text-muted); line-height: 1.45; font-family: 'BIZ UDPGothic', sans-serif; }
+  /* Marks where the drilled word sits within its own example sentence (see
+     findSeenAsHighlightRange/renderSeenAsHtml) - not every entry finds a
+     match (conjugated verbs partially do via the stripped-ending fallback,
+     a handful of template/meta-note entries don't at all), so this only
+     ever adds emphasis, never required for the sentence to make sense. */
+  mark.seen-as-highlight {
+    background: var(--accent-dim); color: var(--accent); font-weight: 600;
+    border-radius: 3px; padding: 0 0.15em;
+  }
+  .context-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 0.4rem; }
+  .context-card-file { font-size: 11px; color: var(--text-dim); margin-top: 0.15rem; }
+
+  .prompt { font-size: 14px; font-weight: 600; color: var(--text-muted); margin-bottom: 1.75rem; text-align: center; }
+
+  .options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .opt {
+    position: relative;
+    padding: 13px 8px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s; line-height: 1.35;
+  }
+  .opt:hover:not(:disabled) { border-color: var(--border-hover); background: var(--opt-hover-bg); }
+  .opt.correct { background: var(--green-dim); border-color: var(--green); color: var(--green); font-weight: 700; }
+  .opt.wrong { background: var(--red-dim); border-color: var(--red); color: var(--red); font-weight: 700; }
+  .opt:disabled { cursor: default; }
+  .opt .opt-jp { display: block; font-size: 17px; font-weight: 600; margin-bottom: 2px; font-family: 'BIZ UDPGothic', sans-serif; }
+  .opt .opt-rd { display: block; font-size: 13px; font-weight: 600; opacity: 0.85; }
+  .opt .opt-en { display: block; font-size: 11px; opacity: 0.5; }
+  /* Japanese as the answer (reversed drills, 2026-10-13): Andrew found the
+     kana much harder to read than the romaji options - bigger, full colour. */
+  .opt .opt-rd.opt-kana { font-family: 'BIZ UDPGothic', sans-serif; font-size: 20px; font-weight: 700; opacity: 1; line-height: 1.25; margin-bottom: 2px; }
+  .opt-num {
+    position: absolute; top: 4px; left: 6px;
+    font-size: 10px; font-weight: 600; color: var(--text-dim);
+    opacity: 0.6; pointer-events: none;
+  }
+  /* Typed-answer mode (kana -> romaji only, see toggleTypeAnswerMode) - an
+     alternative to picking from four options: type the reading yourself.
+     Row spans both .options grid columns since it's the only "option" on
+     screen. 16px input font is deliberate - anything smaller triggers an
+     unwanted auto-zoom on focus in iOS Safari. */
+  .type-answer-row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: stretch; }
+  .type-answer-input {
+    flex: 1; min-width: 0; padding: 13px 14px; border-radius: var(--radius);
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text); font-size: 16px; font-weight: 600;
+    font-family: 'BIZ UDPGothic', -apple-system, sans-serif;
+    outline: none; transition: all 0.15s;
+  }
+  .type-answer-input:focus { border-color: var(--accent); }
+  .type-answer-input::placeholder { color: var(--text-dim); font-weight: 500; }
+  .type-answer-input.correct { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+  .type-answer-input.wrong { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+  .type-answer-input:disabled { cursor: default; opacity: 0.9; }
+  .type-answer-submit {
+    flex-shrink: 0; padding: 13px 18px; border-radius: var(--radius);
+    border: 1px solid var(--accent); background: var(--accent-dim);
+    color: var(--accent); font-size: 14px; font-weight: 700; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .type-answer-submit:hover:not(:disabled) { background: var(--accent); color: #fff; }
+  .type-answer-submit:disabled { cursor: default; opacity: 0.6; }
+  .kbd-hint {
+    position: absolute; top: 4px; left: 6px;
+    font-size: 10px; font-weight: 500; color: var(--text-dim);
+    opacity: 0.55; pointer-events: none;
+  }
+
+  .feedback {
+    min-height: 22px; font-size: 14px; font-weight: 500;
+    margin-top: 1rem; text-align: center;
+  }
+  .feedback.good { color: var(--green); }
+  .feedback.bad { color: var(--red); }
+  .feedback-standard-note { font-size: 13px; font-weight: 700; color: var(--accent); margin-top: 0.35rem; font-family: 'BIZ UDPGothic', sans-serif; }
+
+  .next-btn {
+    position: relative;
+    padding: 12px; border-radius: var(--radius); width: 100%;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text); font-size: 14px; cursor: pointer;
+    transition: all 0.15s; margin-top: 0.5rem;
+    visibility: hidden;
+  }
+  .next-btn:hover { border-color: var(--border-hover); background: var(--surface2); }
+
+  /* Wraps speak-btn + romaji-btn side by side - both are hint triggers for
+     the same word, so they read as one control group rather than two
+     unrelated buttons. Individual buttons carry no margin of their own;
+     this row supplies the centring/spacing that .speak-btn used to. */
+  .hint-btn-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 0.5rem; margin: 0.4rem auto 0.6rem;
+  }
+  .speak-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); font-size: 20px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .speak-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
+  .speak-btn:disabled { opacity: 0.35; cursor: default; }
+  .speak-btn:disabled:hover { border-color: var(--border); background: var(--surface2); }
+  /* romaji-btn reuses .speak-btn's circle styling but carries text, not an
+     SVG - "Aa" reads as "show me the roman letters" without needing a new
+     icon language of its own. */
+  #romaji-btn { font-size: 15px; font-weight: 600; letter-spacing: -0.5px; }
+  /* Revealed romaji text - same treatment as .alt-form (q-alt-form) so a
+     hint-revealed word doesn't look visually different from the "also
+     written as" reveal that already exists in the same spot. */
+  .romaji-reveal {
+    text-align: center; color: var(--text-muted); font-size: 15px;
+    margin: -0.3rem 0 0.6rem;
+  }
+
+  /* Results screen */
+  .results-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 2.5rem 2rem;
+    text-align: center;
+  }
+  .score-big { font-size: 56px; font-weight: 700; color: var(--accent); }
+  .score-sub { font-size: 14px; font-weight: 600; color: var(--text-muted); margin-top: 4px; margin-bottom: 1.5rem; }
+  .missed-label { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-bottom: 0.75rem; }
+  .missed-chars { font-size: 32px; letter-spacing: 8px; line-height: 1.8; margin-bottom: 1.5rem; color: var(--red); font-family: 'BIZ UDPGothic', sans-serif; }
+  .no-missed { font-size: 14px; font-weight: 600; color: var(--green); margin-bottom: 1.5rem; }
+
+  .results-btns { display: flex; flex-direction: column; gap: 8px; }
+  .btn-primary {
+    padding: 13px; border-radius: var(--radius);
+    background: var(--accent); border: none;
+    color: #0f0f0f; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-secondary {
+    padding: 13px; border-radius: var(--radius);
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-secondary:hover { border-color: var(--border-hover); background: var(--surface2); }
+
+  /* Stats bar */
+  .stats-row { display: flex; gap: 8px; }
+  .stat-pill {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0.75rem;
+    text-align: center;
+  }
+  .stat-num { font-size: 20px; font-weight: 700; }
+  .stat-lbl { font-size: 11px; font-weight: 600; color: var(--text-dim); margin-top: 2px; }
+  .stat-num.green { color: var(--green); }
+  .stat-num.red { color: var(--red); }
+  .stat-num.gold { color: var(--accent); }
+  .stat-num.blue { color: var(--blue); }
+
+  /* Match mode */
+  .match-card-select {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 0.875rem 1.25rem;
+    cursor: pointer; transition: border-color 0.15s; user-select: none;
+  }
+  #match-category-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  #counter-quiz-selection-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .match-card-select:hover { border-color: var(--border-hover); }
+  .match-card-select.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .match-card-select .group-name { font-size: 15px; font-weight: 700; }
+  .section-divider { height: 1px; background: var(--accent); opacity: 0.45; margin: 0.25rem 0; }
+  .tile-group-heading { flex-basis: 100%; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; color: var(--accent); border-top: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); padding-top: 0.45rem; margin-top: 0.4rem; }
+  .install-card { align-items: center; gap: 12px; }
+  .install-card .install-why { margin-top: 4px; }
+  .install-btn { flex-shrink: 0; padding: 8px 16px; border-radius: 99px; border: 1px solid var(--accent); background: var(--accent-dim); color: var(--accent); font-weight: 700; font-size: 13px; cursor: pointer; font-family: inherit; }
+  /* DESK SHEETS */
+  #screen-desk-sheets { max-width: none; }
+  .ds-toolbar { max-width: 640px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 0.6rem; }
+  .ds-buttons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .ds-btn { font-size: 13px; font-weight: 600; color: var(--text-muted); border: 1px solid var(--border); border-radius: 99px; padding: 8px 18px; background: transparent; cursor: pointer; font-family: inherit; }
+  .ds-btn-main { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+  .ds-scroll { width: 100%; overflow-x: auto; }
+  #desk-sheets { display: flex; flex-direction: column; gap: 24px; width: max-content; margin: 0 auto; }
+  .ds-page { width: 1080px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .ds-page-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .ds-page-title span { color: var(--text-muted); font-weight: 600; font-size: 12px; margin-left: 8px; }
+  .ds-page-title { margin-bottom: 8px; }
+  .ds-page-title .ds-example { font-family: 'BIZ UDPGothic', sans-serif; font-size: 13px; color: var(--text-muted); margin-left: 14px; font-weight: 500; }
+  .ds-cols { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; align-items: start; }
+  .ds-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .ds-col.wide { grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; align-content: start; }
+  .ds-col.wide .ds-head, .ds-col.wide .ds-note, .ds-col.wide .ds-group-head { grid-column: span 2; }
+  .ds-group-head { border-radius: 6px; padding: 2px 6px; margin-top: 2px; background: color-mix(in srgb, var(--slot-7) 16%, transparent); border-left: 3px solid var(--slot-7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ds-group-head .ds-jp { font-size: 13px; }
+  .ds-head { border-radius: 8px; padding: 5px 6px; background: color-mix(in srgb, var(--slot) 22%, transparent); border-left: 4px solid var(--slot); }
+  .ds-head-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .ds-num { font-weight: 800; color: var(--slot); font-size: 15px; }
+  .ds-role { font-size: 11px; font-weight: 700; line-height: 1.2; flex: 1; }
+  .ds-particle { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 16px; border: 1.5px solid var(--slot); border-radius: 6px; padding: 0 5px; min-width: 22px; text-align: center; }
+  .ds-note { font-size: 10px; color: var(--text-muted); line-height: 1.25; padding: 0 2px; }
+  .ds-card { border: 1px solid var(--border); border-left: 3px solid var(--slot); border-radius: 7px; padding: 2px 4px; text-align: center; background: var(--bg); break-inside: avoid; }
+  .ds-jp { font-family: 'BIZ UDPGothic', sans-serif; font-size: 14.5px; font-weight: 700; line-height: 1.15; }
+  .ds-ro { font-size: 9.5px; color: var(--text-muted); line-height: 1.15; }
+  .ds-en { font-size: 9.5px; line-height: 1.15; }
+  .ds-verb { background: color-mix(in srgb, var(--slot-7) 16%, transparent); border-left-color: var(--slot-7); }
+  .ds-verb .ds-jp { font-size: 13px; }
+  .ds-ends { border: 1px solid var(--border); border-left: 3px solid var(--slot-7); border-radius: 7px; padding: 3px 5px; margin-top: 4px; background: var(--bg); }
+  .ds-end { display: flex; flex-direction: column; padding: 2px 0; border-bottom: 1px dotted var(--border); }
+  .ds-end:last-child { border-bottom: none; }
+  .ds-end-jp { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 13px; }
+  .ds-end-en { font-size: 9.5px; color: var(--text-muted); }
+  /* SENTENCE BUILDER (2026-10-22) - the desk-sheet columns, tappable. */
+  #screen-sentence-builder { max-width: none; }
+  .sb-head { max-width: 640px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 0.5rem; align-items: center; }
+  .sb-rows { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .sb-strip { position: sticky; top: 0; z-index: 5; max-width: 760px; width: 100%; margin: 0 auto; box-sizing: border-box; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; text-align: center; box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+  .sb-prompt { font-size: 15px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+  .sb-jp { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 20px; line-height: 1.6; }
+  .sb-ro { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .sb-empty { font-size: 13px; color: var(--text-dim); padding: 6px 0; }
+  .sb-en { font-size: 14px; color: var(--text-muted); font-style: italic; margin-top: 4px; line-height: 1.5; }
+  .sb-en .l3c-en { color: color-mix(in srgb, var(--slot) 70%, var(--text-muted)); font-style: italic; }
+  .sb-en-built { font-size: 16px; font-style: normal; color: var(--text); }
+  .sb-en-built .l3c-en { font-style: normal; color: var(--slot); font-weight: 600; }
+  .sb-en-answer { font-style: normal; color: var(--green); font-weight: 600; }
+  .sb-notes { font-size: 12px; color: var(--slot-5); margin-top: 4px; }
+  .sb-prompt-jp { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.5; cursor: pointer; }
+  .sb-prompt-ro { margin-bottom: 2px; }
+  /* Reading face: English first and bright, romaji second, kana only when asked for. */
+  .sb-rev .sb-card { display: flex; flex-direction: column; }
+  .sb-rev .sb-card .ds-en { order: 1; font-size: 13.5px; font-weight: 700; color: var(--text); line-height: 1.2; }
+  .sb-rev .sb-card .ds-ro { order: 2; font-weight: 500; color: var(--text-muted); }
+  .sb-rev .sb-card .ds-jp { order: 3; display: none; }
+  .sb-rev.sb-showkana .sb-card .ds-jp { display: block; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+  .sb-end-jp { font-size: 10.5px; color: var(--text-dim); font-weight: 600; margin-left: 2px; }
+  .sb-strip .l3c-chunk { display: inline-block; margin: 2px 0 4px; line-height: 1.3; }
+  .sb-ro .l3c-chunk { border-bottom-width: 2px; color: var(--text); }
+  .sb-chunk.sb-wrong, .sb-chunk.sb-extra { text-decoration: line-through; opacity: 0.6; }
+  .sb-chunk.sb-right { box-shadow: inset 0 -3px 0 var(--green); }
+  .sb-chunk.sb-ending { text-decoration: underline wavy var(--slot-5); text-underline-offset: 4px; }
+  .sb-answer { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); cursor: pointer; }
+  .sb-verdict { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+  .sb-verdict.good { color: var(--green); font-weight: 700; }
+  .sb-buttons { margin-top: 8px; }
+  .sb-stats { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+  .sb-scroll { width: 100%; overflow-x: auto; padding-bottom: 6px; }
+  .sb-cols { display: flex; gap: 6px; align-items: flex-start; width: max-content; margin: 0 auto; }
+  /* Column width grows with wide screens (laptops), and the card text with it,
+     so the builder fills the screen instead of sitting small in the middle. */
+  #screen-sentence-builder { --sbw: 112px; }
+  @media (min-width: 900px) and (min-height: 520px) {
+    #screen-sentence-builder { --sbw: clamp(112px, 10.5vw, 160px); }
+    .sb-card .ds-jp { font-size: clamp(14.5px, 1.25vw, 19px); }
+    .sb-card .ds-jp.long { font-size: clamp(13px, 1.1vw, 17px); }
+    .sb-card .ds-jp.xlong { font-size: clamp(11.5px, 0.95vw, 15px); }
+    .sb-card .ds-ro, .sb-card .ds-en { font-size: clamp(9.5px, 0.8vw, 12px); }
+    .sb-col .ds-role { font-size: clamp(11px, 0.85vw, 13px); }
+    .sb-strip { max-width: min(1000px, 100%); }
+    .sb-jp { font-size: clamp(20px, 1.8vw, 26px); }
+    .sb-ro { font-size: clamp(12px, 0.95vw, 14px); }
+  }
+  .sb-col { flex: 0 0 var(--sbw); }
+  .sb-col.wide { flex-basis: calc(var(--sbw) * 2 + 4px); }
+  .sb-card { cursor: pointer; user-select: none; -webkit-user-select: none; }
+  /* Romaji brighter than the English on builder cards (Andrew, 2026-10-23):
+     find the word by its sound, not by scanning for "tomorrow". */
+  .sb-card .ds-ro { color: var(--text); font-weight: 600; }
+  .sb-card .ds-en { color: var(--text-dim); font-weight: 400; }
+  .sb-card.sb-picked { background: color-mix(in srgb, var(--slot) 28%, var(--bg)); border-color: var(--slot); box-shadow: 0 0 0 1.5px var(--slot); }
+  .sb-card.sb-ok { box-shadow: 0 0 0 2px var(--green); }
+  .sb-card.sb-should { outline: 2px dashed var(--green); outline-offset: -2px; }
+  .sb-ends { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .sb-end { font-family: 'BIZ UDPGothic', sans-serif; font-size: 13px; font-weight: 700; padding: 5px 4px; border-radius: 7px; border: 1px solid var(--border); border-left: 3px solid var(--slot-7); background: var(--bg); color: var(--text); cursor: pointer; }
+  .sb-end.active { background: color-mix(in srgb, var(--slot-7) 28%, var(--bg)); border-color: var(--slot-7); }
+  .sb-end-q { font-size: 11.5px; }
+  /* (2026-11-05) English-to-Japanese mode: the ending buttons hold English
+     ("does / will", "a question"), so they take the same font and size as the
+     English on the word cards beside them; only the kana keeps BIZ UDPGothic. */
+  .sb-rev .sb-end, .sb-rev .sb-end-q { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13.5px; line-height: 1.2; }
+  .sb-rev .sb-end-jp { font-family: 'BIZ UDPGothic', sans-serif; display: block; margin: 1px 0 0; font-size: 11px; } /* own line, like the romaji under a card */
+  .sbp-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 6px; }
+  .sbp-title { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
+  .sbp-row { display: grid; grid-template-columns: 9.5rem 1fr 2.6rem; align-items: center; gap: 8px; font-size: 12.5px; }
+  .sbp-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sbp-bar { height: 8px; border-radius: 99px; background: var(--surface2); overflow: hidden; }
+  .sbp-bar span { display: block; height: 100%; background: var(--slot); border-radius: 99px; }
+  .sbp-pct { text-align: right; font-weight: 700; color: var(--text-muted); }
+  .sbp-few .sbp-bar span { opacity: 0.35; }
+  .sbp-note { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+  .sb-tip { font-size: 11px; color: var(--text-dim); text-align: center; max-width: 640px; margin: 0 auto; }
+  /* Phone on its side: a slimmer strip, so more of the columns show under it. */
+  @media (max-height: 500px) {
+    .sb-strip { padding: 6px 10px; }
+    .sb-prompt { font-size: 14px; margin-bottom: 2px; }
+    .sb-jp { font-size: 17px; line-height: 1.45; }
+    .sb-empty, .sb-verdict { font-size: 12px; padding: 0; margin-top: 2px; }
+    .sb-buttons { margin-top: 4px; }
+    .sb-buttons .ds-btn { padding: 4px 14px; }
+    .sb-stats { display: none; }
+    #screen-sentence-builder .sb-head .settings-title { display: none; }
+  }
+  @media print {
+    @page { size: A4 landscape; margin: 7mm; }
+    html, body { background: #fff !important; color: #000 !important; }
+    header, .ds-toolbar, .nav-back, .screen:not(#screen-desk-sheets) { display: none !important; }
+    main { padding: 0 !important; display: block !important; }
+    #screen-desk-sheets { display: block !important; max-width: none !important; }
+    .ds-scroll { overflow: visible !important; }
+    #desk-sheets { display: block !important; min-width: 0 !important; width: auto !important; margin: 0 !important; }
+    .ds-page { width: auto !important; height: 194mm; border: none !important; border-radius: 0; padding: 0 !important; background: #fff !important; color: #000 !important; break-after: page; page-break-after: always; overflow: hidden; }
+    .ds-page:last-child { break-after: auto; page-break-after: auto; }
+    .ds-page, .ds-page * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .ds-head { background: #e4e4e4 !important; border-left-color: #555 !important; }
+    .ds-num, .ds-particle { color: #000 !important; border-color: #333 !important; }
+    .ds-card { background: #fff !important; border-color: #aaa !important; border-left-color: #666 !important; padding: 1px 3px !important; }
+    .ds-col { gap: 3px !important; }
+    .ds-verb, .ds-group-head { background: #f0f0f0 !important; border-left-color: #666 !important; }
+    .ds-ro, .ds-note, .ds-example, .ds-page-title span { color: #444 !important; }
+    .ds-en, .ds-jp, .ds-role, .ds-page-title { color: #000 !important; }
+    /* Bigger print text (2026-10-13, Andrew: "quite small") - long words step down so columns keep their width. */
+    .ds-jp { font-size: 18px !important; line-height: 1.12 !important; }
+    .ds-jp.long { font-size: 15px !important; }
+    .ds-jp.xlong { font-size: 12.5px !important; }
+    .ds-ro { font-size: 10.5px !important; }
+    .ds-en { font-size: 11px !important; font-weight: 600; }
+    .ds-group-head .ds-jp { font-size: 14px !important; }
+    .ds-group-head { padding: 0 6px !important; margin-top: 0 !important; line-height: 1.25; }
+    .ds-verb .ds-jp { font-size: 15px !important; }
+    .ds-verb .ds-jp.xlong { font-size: 12px !important; }
+    .ds-ends { background: #fff !important; border-color: #aaa !important; border-left-color: #666 !important; }
+    .ds-end-jp { font-size: 14px !important; color: #000 !important; }
+    .ds-end-en { font-size: 10.5px !important; color: #333 !important; }
+    .ds-role { font-size: 12.5px !important; }
+    .ds-note { font-size: 10.5px !important; }
+    .ds-particle { font-size: 17px !important; }
+  }
+  #match-grammar-view { flex-direction: column; gap: 0.5rem; }
+  .grammar-page-head { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); margin-top: 0.9rem; }
+  .grammar-page-head:first-child { margin-top: 0.2rem; }
+  /* Back (2026-10-16): top-left of every inner page, naming where it goes. */
+  .nav-back { align-self: flex-start; background: none; border: none; padding: 2px 0; margin: 0 0 -0.4rem; font: inherit; font-size: 14px; font-weight: 600; color: var(--accent); cursor: pointer; text-align: left; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav-back:active { opacity: 0.6; }
+  /* "You can turn this page off in Settings" line (2026-10-15) - top of the
+     Tourist / Untaught lists and the Kanji page. */
+  .tier-off-note { font-size: 12px; color: var(--text-muted); text-align: center; line-height: 1.4; margin: 0 0.5rem; }
+  /* Links on the Grammar page (2026-10-15): plain text colour rather than the
+     gold/bold of other ref cards, so the gold headings stand out. The topic
+     (before " — ") is bold; the explanation after it is lighter and grey. */
+  .grammar-page-card { gap: 8px; }
+  #build-view { flex-direction: column; gap: 0.5rem; }
+  .build-divider { margin: 0.6rem 0; }
+  .vocab-ref-card.grammar-page-card { color: var(--text); font-weight: 500; font-size: 13.5px; } /* beats .vocab-ref-card's gold, defined later */
+  .grammar-page-card:hover { border-color: var(--accent); }
+  .grammar-page-card .gp-label { font-weight: 700; }
+  .grammar-page-card .gp-label-rest { font-weight: 500; color: var(--text-muted); }
+  .grammar-page-card .gp-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .grammar-page-card .gp-sub { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  /* Reading passages (L4, 2026-11-04) */
+  .rp-passage { background: var(--surface, #1a1a1a); border: 1px solid var(--border, #2a2a2a); border-radius: 12px; padding: 14px 16px; margin: 10px 0; }
+  .rp-title { font-size: 13px; color: var(--text-dim, #888); margin-bottom: 8px; }
+  .rp-line { padding: 6px 0; cursor: pointer; border-bottom: 1px dashed rgba(127,127,127,0.18); }
+  .rp-line:last-child { border-bottom: none; }
+  .rp-jp { font-size: 20px; line-height: 1.5; }
+  .rp-ro { font-size: 13px; color: var(--text-dim, #888); }
+  .rp-en { font-size: 13px; color: var(--text-muted, #aaa); font-style: italic; }
+  .rp-claims { margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+  .rp-claim { border: 1px solid var(--border, #2a2a2a); border-radius: 10px; padding: 10px 12px; }
+  .rp-claim.rp-right { border-color: rgba(76,175,80,0.6); }
+  .rp-claim.rp-wrong { border-color: rgba(229,115,115,0.6); }
+  .rp-claim-en { font-size: 15px; margin-bottom: 8px; }
+  .rp-tf { display: flex; gap: 8px; }
+  .rp-btn { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--border, #333); background: transparent; color: inherit; font-size: 14px; cursor: pointer; }
+  .rp-btn.active { border-color: var(--accent, #e8c468); color: var(--accent, #e8c468); }
+  .rp-btn:disabled { cursor: default; opacity: 0.8; }
+  .rp-verdict { font-size: 13px; margin-top: 6px; color: var(--text-muted, #aaa); }
+  .gp-lvl-1 { color: #5b9bff; } .gp-lvl-2 { color: #ff9a52; } .gp-lvl-3 { color: #2ec4b6; } .gp-lvl-4 { color: #a888f0; }
+  .cat-lvl-badges { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: 1px; }
+  .cat-lvl-badges .gp-lvl { font-size: 10px; padding: 0 6px; }
+  .gp-lvl { flex-shrink: 0; font-size: 11px; font-weight: 700; border-radius: 99px; padding: 1px 7px; border: 1px solid currentColor; opacity: 0.85; }
+  .tile-group-heading.first { border-top: none; padding-top: 0; margin-top: 0; }
+  .sk-reveal { font-size: 56px; line-height: 1.2; }
+  .sk-reveal-sub { font-size: 15px; color: var(--text-muted); margin-top: 4px; }
+  .vocab-ref-card {
+    display: flex; justify-content: space-between; align-items: center;
+    background: transparent; border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0.5rem 1rem;
+    cursor: pointer; transition: border-color 0.15s; user-select: none;
+    font-size: 13px; font-weight: 600; color: var(--accent);
+    margin-bottom: -0.25rem; text-decoration: none;
+    /* No line-height was ever set here, so a label short enough to stay on
+       one line (true for most of these cards) looked fine on the browser
+       default alone - but a longer one that wraps on a narrow phone (the
+       Grammar notes hub's "Object-taking verbs" label, flagged on a Pixel
+       10 Pro XL) had its two lines sitting right on top of each other,
+       crushed rather than just wrapped. 1.35 matches the value .opt (the
+       multiple-choice answer cards) already uses for the same reason -
+       gives wrapped text room to breathe without changing this card's
+       height at all when the label fits on one line, which is still most
+       of them. */
+    line-height: 1.35;
+    /* Some of these labels embed real kana/kanji directly (e.g. the tense
+       card's いきます/きます/かえります, or the new だれも/どこも/なにも card) -
+       missing font-family here is the exact same bug class as .level-pill
+       had, just not caught in that sweep since it required actually
+       rendering the category list rather than the reference screens
+       themselves. Same fix, same reasoning. */
+    font-family: 'BIZ UDPGothic', -apple-system, sans-serif;
+  }
+  .vocab-ref-card:hover { border-color: var(--accent); }
+  /* Reference links folded into a tile-selection screen (2026-08-31, see
+     CATEGORY_REFERENCE_LINKS) sit directly above the centre-justified "tap
+     a word to select it for drilling" line - a left-justified card with a
+     barely-there default border reads as unbalanced against that centred
+     text below it. Gold border always on here (not just :hover) rather
+     than changing alignment or anything else - the full-width highlight is
+     what restores the balance, scoped to this one container so every other
+     .vocab-ref-card (Grammar notes hub, the two notes links, etc.) keeps
+     its normal subtle-until-hovered look. */
+  #vocab-tile-selection-ref-links .vocab-ref-card { border-color: var(--accent); }
+  /* (2026-11-05) Two links stacked (Time vocabulary) overlapped - the card's
+     -0.25rem bottom margin assumes it's alone. Proper gap here instead. */
+  #vocab-tile-selection-ref-links { display: flex; flex-direction: column; gap: 0.5rem; }
+  #vocab-tile-selection-ref-links .vocab-ref-card { margin-bottom: 0; }
+  #vocab-tile-selection-ref-links:not(:empty) { margin-bottom: 0.25rem; }
+  .vocab-ref-arrow { color: var(--text-muted); }
+  #vocab-ref-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  #vocab-ref-list.tight-list { gap: 0.4rem; }
+  .counter-unit-pills { margin-bottom: 0.3rem; gap: 5px; }
+  /* Tighter than the default .level-pill padding - these are short,
+     single-word labels (Mins/Hours/Days... or a single kanji), so the usual
+     generous padding just pushes the row into wrapping sooner than it needs
+     to. */
+  /* min-width matters here specifically because half these pills (the item
+     counters) are a single kanji glyph rather than a word like "Hours" -
+     without it, a lone-glyph pill just shrinks to fit its content and reads
+     as visually smaller than a word pill even at identical padding/font. */
+  .counter-unit-pills .level-pill { padding: 4px 10px; font-size: 13px; min-width: 34px; text-align: center; }
+  .counter-tool-pills { margin-top: 0.5rem; }
+  .counter-tool-desc { text-align: center; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-top: 0.35rem; min-height: 15px; }
+  .vocab-ref-row {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0.7rem 1rem;
+  }
+  .vocab-ref-row.minute-row { padding: 0.4rem 1rem; }
+  .vocab-ref-row.two-col {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  }
+  .vocab-ref-col-left { text-align: left; }
+  .vocab-ref-col-right { text-align: right; }
+  .vocab-ref-num-big { font-size: 28px; font-weight: 800; color: var(--accent); line-height: 1; }
+  .vocab-ref-jp { font-size: 24px; font-weight: 700; font-family: 'BIZ UDPGothic', sans-serif; }
+  .vocab-ref-alt { font-size: 14px; font-weight: 600; color: var(--accent); font-family: 'BIZ UDPGothic', sans-serif; margin-top: 2px; }
+  .vocab-ref-en { font-size: 16px; font-weight: 700; }
+  .vocab-ref-romaji { font-size: 14px; color: var(--text-muted); margin-top: 2px; }
+  .vocab-ref-jp.minute-jp { font-size: 18px; }
+  .vocab-ref-romaji.minute-romaji { font-size: 15px; font-weight: 600; color: var(--text-muted); margin-top: 3px; }
+  /* The も+negative example sentences are a full short clause, not a single
+     word/reading like every other user of .minute-jp - scaled down further
+     so they don't crowd the right-hand column on a narrow phone. */
+  .qneg-example-jp { font-size: 14px; }
+  /* Marks 午 (horse) as the noon pivot on the zodiac-clock reference - the
+     row where AM flips to PM. */
+  .zodiac-pivot-row { border-color: var(--accent); background: var(--accent-dim); }
+  /* One emoji per animal, just for a bit of colour on the zodiac-clock
+     reference - sized to sit comfortably next to the 18px kanji/reading
+     without dominating the row. */
+  .zodiac-emoji { font-size: 26px; line-height: 1; flex-shrink: 0; margin-right: 0.6rem; }
+  .vocab-ref-row.minute-row.zodiac-row { display: flex; align-items: center; }
+  .vocab-ref-row.minute-row.zodiac-row .vocab-ref-col-left { display: flex; align-items: center; flex: 1; }
+  .zodiac-clock-note {
+    font-size: 12px; color: var(--text-dim); background: var(--surface2);
+    border-radius: var(--radius); padding: 0.6rem 0.8rem; margin-top: 0.3rem;
+  }
+  /* Sentence-order reference (above L2 Verbs) - each row is a numbered
+     slot with an English role, a short note, and the particle that marks
+     it boxed on the right, echoing the boxed-particle shorthand from a
+     handwritten lesson note this was built from. */
+  .sentence-structure-inner { display: flex; align-items: center; gap: 12px; }
+  .sentence-structure-text { flex: 1; min-width: 0; }
+  .sentence-structure-role { font-size: 14.5px; font-weight: 700; color: var(--text); }
+  .sentence-structure-note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .sentence-particle-badge {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    min-width: 34px; height: 34px; padding: 0 6px;
+    border: 2px solid var(--accent); border-radius: 8px;
+    font-family: 'BIZ UDPGothic', sans-serif; font-size: 18px; font-weight: 800; color: var(--accent);
+    transition: all 0.15s;
+  }
+  /* Each of the 6 rows is now tappable, cycling on/off/question - the row
+     itself gets a pointer cursor and a hover state for affordance, and the
+     badge changes look per state rather than just its text, so the state is
+     readable at a glance even before reading the small label underneath. */
+  .sentence-slot-row { cursor: pointer; transition: border-color 0.15s; }
+  .sentence-slot-row:hover { border-color: var(--border-hover); }
+  .sentence-slot-off .sentence-structure-role,
+  .sentence-slot-off .sentence-structure-note { opacity: 0.45; }
+  .sentence-particle-badge-off {
+    border-color: var(--border); color: var(--text-dim); font-size: 20px; font-weight: 700;
+  }
+  .sentence-particle-badge-q { border-color: var(--blue); color: var(--blue); font-size: 15px; }
+  .sentence-particle-badge-freq { font-size: 15px; } /* L3 frequency slot - a whole word, not one particle */
+  .sentence-structure-state { font-weight: 700; }
+  .sentence-structure-hint {
+    font-size: 14px; font-weight: 500; color: var(--accent); text-align: center;
+    margin-bottom: 0.2rem;
+  }
+  /* The 6 rows are wrapped in their own container (so a tap can re-render
+     just the rows without touching the example/button below) - but
+     #vocab-ref-list's own flex gap only reaches its direct children, so
+     without this the rows would sit flush against each other instead of
+     keeping the same spacing every other reference list uses. */
+  #sentence-structure-rows { display: flex; flex-direction: column; gap: 0.4rem; }
+  .sentence-structure-example {
+    background: var(--surface2); border-radius: var(--radius);
+    padding: 0.7rem 0.9rem; margin-top: 0.3rem; text-align: center;
+  }
+  .sentence-structure-example-jp { font-size: 16px; font-weight: 700; font-family: 'BIZ UDPGothic', sans-serif; }
+  .sentence-structure-example-romaji { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .sentence-structure-example-en { font-size: 12px; color: var(--text-dim); margin-top: 4px; font-style: italic; }
+  .sentence-shuffle-btn {
+    display: block; width: 100%; margin-top: 10px;
+    padding: 8px 14px; border-radius: 99px; border: 1px solid var(--accent);
+    background: var(--accent-dim); color: var(--accent);
+    font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sentence-shuffle-btn:active { background: var(--accent); color: var(--bg); }
+  /* Coloured slots on the Level 3 Sentence order card (2026-10-09). */
+  .l3c-row { border-left: 5px solid var(--slot); }
+  .l3c-row .vocab-ref-num-big { color: var(--slot); }
+  .l3c-row.sentence-slot-off { border-left-color: color-mix(in srgb, var(--slot) 35%, transparent); }
+  .l3c-row.l3c-row-active { background: color-mix(in srgb, var(--slot) 28%, var(--surface)); border-color: var(--slot); box-shadow: inset 0 0 0 1.5px var(--slot); }
+  .l3c-row.l3c-row-skip { background: color-mix(in srgb, var(--text-dim) 18%, var(--surface)); }
+  /* (2026-10-09, v2) Full-strength colour bar under each slot's words rather
+     than a tinted background, which looked washed out in dark mode. Lit
+     (step through / tap) = solid fill in the slot colour with dark text. */
+  .l3c-chunk { border-bottom: 3px solid var(--slot); border-radius: 0; padding: 1px 3px 0; cursor: pointer; white-space: nowrap;
+    transition: background 0.2s, color 0.2s, opacity 0.2s; }
+  .sentence-structure-example-romaji .l3c-chunk { border-bottom-width: 2px; color: var(--text); }
+  .l3c-playing .l3c-chunk { opacity: 0.35; }
+  /* Coloured English (2026-10-15): text colour only, dimmed with the rest while stepping through. */
+  /* Mixed with the grey English colour so it stays quieter than the kana. */
+  .l3c-en { color: color-mix(in srgb, var(--slot) 70%, var(--text-dim)); }
+  .l3c-playing .l3c-en { opacity: 0.35; }
+  .l3c-playing .l3c-en.l3c-chunk-active { opacity: 1; }
+  .l3c-playing .l3c-chunk.l3c-chunk-active { opacity: 1; background: var(--slot); color: var(--bg); border-radius: 4px; }
+  .sentence-structure-example-jp { line-height: 1.7; }
+  /* Room between wrapped romaji lines too, or the lit blocks/underlines overlap (2026-10-09). */
+  #sentence-structure-example-romaji { line-height: 2.1; margin-top: 6px; }
+  .l3c-play-btn { margin-top: 12px; }
+  .l3c-play-btn + .sentence-shuffle-btn { margin-top: 8px; }
+  /* Guarded to real-mouse devices only - on a touchscreen, a plain :hover
+     rule fires on tap but never gets a "pointer left" event to clear it
+     afterward, so the button stays stuck fully gold until something else
+     is tapped. :active above still gives a touch tap its own momentary
+     feedback, which clears itself the instant the tap ends. */
+  @media (hover: hover) and (pointer: fine) {
+    .sentence-shuffle-btn:hover { background: var(--accent); color: var(--bg); }
+  }
+  /* Day/week/month/year x past/present/future reference - two dimensions
+     rather than one, so it's a real grid instead of the usual row list.
+     Compact sizing throughout so 4 columns (row label + 3 tenses) fit on a
+     phone screen without wrapping. */
+  .time-unit-table { display: grid; grid-template-columns: minmax(46px, auto) repeat(3, 1fr); gap: 5px; }
+  .tu-cell {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 0.5rem 0.25rem; text-align: center;
+  }
+  .tu-header { background: transparent; border: none; font-size: 11px; font-weight: 700; color: var(--text-muted); padding: 0 0.25rem 0.2rem; align-self: end; }
+  .tu-rowlabel {
+    background: transparent; border: none; font-size: 13px; font-weight: 700; color: var(--accent);
+    text-align: left; padding: 0.25rem; display: flex; align-items: center;
+  }
+  .tu-jp { font-size: 16px; font-weight: 700; font-family: 'BIZ UDPGothic', sans-serif; }
+  .tu-romaji { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+  /* Verb tense/+-/- reference (いきます/きます/かえります) - three small 2x2
+     grids (one per verb) rather than one big 3x4 table, deliberately, so it
+     reads as three digestible cards instead of a dense spreadsheet. Reuses
+     the .tu-cell/.tu-header/.tu-jp/.tu-romaji styling from the day/week/
+     month/year table above for visual consistency. */
+  /* Pill row spread edge-to-edge ("aligned across the page") rather than
+     packed to the left, with a deliberate gap of its own before the detail
+     block below - without it the active pill and the heading underneath
+     read as one connected unit instead of a selector + its result. */
+  /* Reverted the space-between spread - on a narrow phone it stretched a
+     lone pill or two on the wrap row out to the far edges with a big gap
+     in between, which read worse than just letting pills pack left like
+     every other pill row in the app (.level-filter-row's own default). */
+  #verb-conj-pills { margin-bottom: 1.4rem; }
+  .verb-conj-block { margin-top: 0.9rem; }
+  .verb-conj-block:first-child { margin-top: 0; }
+  /* Gold heading (jp + english both) so it visually matches the gold active
+     pill above it - bumped a size up from the original heading too. */
+  .verb-conj-heading { font-size: 16px; font-weight: 700; color: var(--accent); margin-bottom: 0.4rem; font-family: 'BIZ UDPGothic', sans-serif; }
+  .verb-conj-heading .verb-conj-en { font-size: 13px; font-weight: 600; color: var(--accent); margin-left: 6px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .verb-conj-table { display: grid; grid-template-columns: minmax(56px, auto) repeat(2, 1fr); gap: 5px; }
+  /* Affirmative/Negative bumped up a touch, and Non-past/Past brought down
+     from gold to the same grey - once the pill row above is doing the gold
+     "this is selected" job, gold row labels here were redundant emphasis.
+     Spacing carries the visual hierarchy instead. Scoped to this table only
+     so the day/week/month/year reference (which reuses .tu-header/
+     .tu-rowlabel too) is untouched. */
+  .verb-conj-table .tu-header { font-size: 12.5px; }
+  .verb-conj-table .tu-rowlabel { color: var(--text-muted); }
+  /* Romaji under the hiragana was reading too small at the base 10.5px -
+     scoped bump here only, same reasoning as above. */
+  .verb-conj-table .tu-romaji { font-size: 12px; }
+  .verb-conj-note {
+    font-size: 13.5px; line-height: 1.5; color: var(--text-note); background: var(--surface2);
+    border-radius: var(--radius); padding: 0.6rem 0.8rem; margin-top: 0.8rem;
+  }
+  /* Days-of-month reference (1st-31st) - a compact grid rather than 31
+     stacked rows, since most of these are just "number + にち" and don't
+     need the visual weight of a full row each. The 5 genuine exceptions
+     (14/19/20/24/29) get a gold border so they stand out from the regular
+     grid at a glance, matching how irregulars are called out elsewhere. */
+  /* 3 columns rather than 4 - a quarter-width column on a real phone wasn't
+     enough room for readings like さんじゅういちにち/sanjuuichinichi, and grid
+     items don't shrink below their content's natural width by default
+     (min-width:auto), so the row was overflowing the screen edge rather
+     than wrapping. min-width:0 below opts back into normal shrink/wrap
+     behaviour, and 3-across leaves enough width that it wasn't needed as
+     a crutch to also cover an over-tight 4-column layout. */
+  .days-month-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 0.6rem; }
+  .days-month-cell {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 0.4rem 0.3rem; text-align: center; min-width: 0;
+  }
+  .days-month-irregular { border-color: var(--accent); }
+  .days-month-num { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 2px; }
+  .days-month-irregular .days-month-num { color: var(--accent); }
+  /* Bumped up now that 3-across leaves room for it - still scaled down from
+     .tu-jp/.tu-romaji's normal size, same reasoning as .verb-conj-table's
+     own scoped overrides, just less aggressively than the 4-column version. */
+  .days-month-cell .tu-jp { font-size: 14.5px; line-height: 1.25; overflow-wrap: break-word; }
+  .days-month-cell .tu-romaji { font-size: 10.5px; margin-top: 2px; overflow-wrap: break-word; }
+  /* Dakuten/handakuten sound-shift reference (shown from the Hiragana and
+     Katakana selection screens) - groups of "base kana -> voiced kana" pairs
+     under a romaji-only heading like "h -> b", since there's no kana glyph
+     for a bare consonant on its own. */
+  .kana-transform-group-label {
+    font-size: 12px; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 0.9rem 0 0.3rem; padding-left: 0.2rem;
+  }
+  .kana-transform-group-label:first-child { margin-top: 0; }
+  /* Device headings on the Appliances reference page - deliberately its own
+     class rather than reusing .kana-transform-group-label above, so this
+     doesn't also change the unrelated dakuten/handakuten reference page.
+     Sized a step below #vocab-ref-title (22px) and picked out in the app's
+     gold accent so each device name reads as a clear section break while
+     scanning, rather than blending into the entry rows below it. */
+  .appliance-device-heading {
+    font-size: 17px; font-weight: 800; color: var(--accent);
+    margin: 1rem 0 0.4rem; padding-left: 0.2rem;
+    font-family: 'BIZ UDPGothic', -apple-system, sans-serif;
+  }
+  .appliance-device-heading:first-child { margin-top: 0; }
+  .kana-transform-row {
+    display: flex; align-items: center; justify-content: center; gap: 1.1rem;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0.5rem 1rem; margin-bottom: 0.4rem;
+  }
+  .kana-transform-side { display: flex; flex-direction: column; align-items: center; min-width: 44px; }
+  .kana-transform-char { font-size: 24px; font-weight: 700; font-family: 'BIZ UDPGothic', sans-serif; }
+  .kana-transform-char.accent { color: var(--accent); }
+  .kana-transform-rom { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .kana-transform-arrow { color: var(--text-dim); font-size: 15px; }
+  .match-card-select .group-count { font-size: 12px; font-weight: 600; color: var(--text-dim); margin-top: 3px; }
+
+  /* Level filter pills on Match screen */
+  .level-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* #vocab-level-filter-row specifically (Collections/Level 1/Level 2/
+     Untaught) - wrapping was fine while every label was short, but
+     "Untaught" is twice the width of the "Trip" pill it replaced, and on a
+     narrow phone (flagged on a Pixel 10 Pro XL) that was enough to tip the
+     last pill onto its own second line by itself, looking broken rather
+     than like a deliberate second row. Scrolls horizontally instead - same
+     fix .nav-pills already uses for the same class of problem - so the row
+     always stays one line and no pill's own text ever wraps either
+     (white-space: nowrap on .level-pill above). Every other row still
+     using the shared .level-filter-row class (hiragana/katakana/numbers/
+     counter pills) is untouched - those can have many more pills and
+     wrapping is still the right behaviour there. */
+  #vocab-level-filter-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; }
+  #vocab-level-filter-row .level-pill { padding-left: 13px; padding-right: 13px; } /* fits Grammar + L1-L3 on a phone (2026-10-15) */
+  #vocab-level-filter-row::-webkit-scrollbar { display: none; }
+  /* Slightly tighter than the shared .level-pill padding (18px sides) -
+     four pills (Collections/Level 1/Level 2/Untaught) were just barely
+     wider than the row on a narrow phone (Pixel 10 Pro XL), enough to
+     read as a rendering mistake rather than an intentional scroll. This
+     plus the row's own tighter 6px gap above reclaims enough width to
+     fit all four without the scroll ever engaging on that size screen.
+     Scoped to this row only - every other .level-filter-row (hiragana/
+     katakana/numbers/counters) keeps the default padding, since those
+     wrap onto multiple lines instead and don't have this problem. */
+  #vocab-level-filter-row .level-pill { padding: 6px 14px; }
+  #vocab-level-filter-row .level-pill.level-pill-icon { padding: 5px 10px; display: inline-flex; align-items: center; justify-content: center; }
+  /* Random page (2026-10-07) - single-choice cards, then toggles, then Start */
+  #match-random-view .group-card.cat-tile.selected { border-color: var(--accent); }
+  .random-choice-desc { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+  /* Each Numbers/Times/Counters section is a single flex child of
+     .screen.visible (which only gives direct children a 1rem gap) - without
+     their own flex+gap, the group-cards inside a section would sit flush
+     against each other instead of keeping the usual card spacing. */
+  #numbers-section-numbers, #numbers-section-times, #numbers-section-counters, #numbers-section-money {
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  /* Money section - exchange rate row, and the two calculator cards below it */
+  .money-rate-row {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    margin-top: 0.5rem; font-size: 18px; font-weight: 700;
+  }
+  .money-rate-input {
+    width: 90px; background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px 8px; font-size: 18px; font-weight: 700; text-align: center;
+    font-family: inherit;
+  }
+  .money-rate-input:focus { outline: none; border-color: var(--accent); }
+  .money-dir-pills { justify-content: center; margin-top: 0.5rem; }
+  /* Second output block within a card (the "with 10% off" line under the
+     full-price line on the shopping-cost card) - same sizing standard as
+     .number-tool-output's own jp/rd pair, just repeated with a gap above. */
+  .money-output-secondary { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+  /* Search + Andrew mode's shared row - set apart from the main level row
+     above so both read as distinct from the regular Collections/L1/L2/
+     Untaught lineup. The row itself is always visible now (Search is for
+     everyone); the Andrew pill inside it still hides/shows via inline
+     style, same as level-pill-untaught does in the row above. */
+  .level-filter-row.andrew-row { margin-top: 8px; }
+  /* Second pill row (2026-10-15) - same pill style and spacing as the main row. */
+  .level-filter-row.optional-row { margin-top: 8px; gap: 6px; }
+  .level-filter-row.optional-row .level-pill { padding: 6px 14px; }
+  /* Pill-shaped search field - same 99px radius/border language as
+     .level-pill, but a text input + submit icon instead of a button. flex:1
+     so it fills the row on its own when the Andrew pill next to it is
+     hidden, and yields space to it once the pill's shown. Border is gold
+     permanently (Andrew's explicit call), not just while focused - unlike
+     every other input in the app, this is meant to read as a standing
+     feature of the page, not something that only lights up while in use. */
+  .vocab-search-pill {
+    flex: 1; min-width: 0; display: flex; align-items: center;
+    border: 1px solid var(--accent); border-radius: 99px;
+    background: transparent; padding-left: 14px;
+  }
+  .vocab-search-input {
+    flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+    color: var(--text); font-size: 13px; font-weight: 600;
+    font-family: 'BIZ UDPGothic', -apple-system, sans-serif;
+    padding: 6px 4px;
+  }
+  .vocab-search-input::placeholder { color: var(--text-dim); font-weight: 500; }
+  .vocab-search-pill { padding-right: 4px; }
+  .vocab-search-clear {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 50%; border: none;
+    background: var(--border); color: var(--text-muted); cursor: pointer; padding: 0;
+  }
+  .vocab-search-clear:hover { color: var(--text); }
+  .vocab-search-btn {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--accent);
+    background: transparent; color: var(--accent); cursor: pointer;
+    transition: all 0.15s;
+  }
+  .vocab-search-btn:hover { color: var(--accent); background: var(--accent-dim); }
+  /* "Type at least 2 characters" / "No matches yet" - only ever shown when a
+     search doesn't make it to the results screen, so this never competes
+     with the tile-selection screen's own empty state. */
+  .vocab-search-message { font-size: 12.5px; color: var(--text-dim); text-align: center; }
+  /* Font-family was missing here, same bug class as .nav-pill already guards
+     against: without it, kana/kanji pill labels (verb-conj-pills' verb forms,
+     the specific-counter/item-counter unit pills - つ/人/個/本/枚/匹/冊/台/回/歳)
+     fall through to the system sans-serif stack, which on some devices
+     renders kana with the strokes visually joined up instead of as separate
+     characters. Applied to ALL level-pills (not just the Japanese-labelled
+     ones) since BIZ UDPGothic renders Latin text fine too - same call as
+     .nav-pill above. */
+  .level-pill {
+    padding: 6px 18px; border-radius: 99px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-muted);
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    font-family: 'BIZ UDPGothic', -apple-system, sans-serif;
+    white-space: nowrap;
+  }
+  .level-pill.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+  .level-pill:disabled { opacity: 0.35; cursor: default; }
+  /* Ties the Level 1/2/Untaught pill text to the same blue/orange/purple used
+     for theme-tile borders (LEVEL_BORDER_COLORS in the script) - but only
+     while Collections itself is the one being viewed (setMatchLevel toggles
+     "showing-theme-colours" on the row), since the colour only means anything
+     in that context - the rest of the time these pills look like normal
+     unselected pills. :not(.active) so the existing gold .active state still
+     wins once a pill is the one currently selected. */
+  /* (2026-11-05) L1/L2 merged into one pill; its two halves take their own
+     colours (the key for the blue/orange word edges) only while Groups is
+     showing, like the other level pills - plain the rest of the time. */
+  #vocab-level-filter-row.showing-theme-colours #level-pill-12:not(.active) .pk-1 { color: #5b9bff; }
+  #vocab-level-filter-row.showing-theme-colours #level-pill-12:not(.active) .pk-2 { color: #ff9a52; }
+  #vocab-level-filter-row.showing-theme-colours #level-pill-12:not(.active) { border-color: rgba(255,255,255,0.22); }
+  #vocab-level-filter-row.showing-theme-colours #level-pill-3:not(.active) { color: #2ec4b6; border-color: rgba(46,196,182,0.45); }
+  #vocab-level-filter-row.showing-theme-colours #level-pill-4:not(.active) { color: #a888f0; border-color: rgba(168,136,240,0.45); }
+  /* Tourist / Untaught (second row, 2026-10-15) take the colours their words'
+     card edges already use: curated (tourist) purple, encountered green. */
+  #vocab-optional-filter-row.showing-theme-colours #level-pill-tourist:not(.active) { color: #a5865f; border: 1px dashed rgba(165,134,95,0.7); }
+  #vocab-optional-filter-row.showing-theme-colours #level-pill-untaught:not(.active) { color: #6b7a88; border: 1px dashed rgba(107,122,136,0.75); }
+  #vocab-level-filter-row.showing-theme-colours #level-pill-random:not(.active) { color: var(--green); border-color: rgba(111,207,151,0.4); }
+  .latest-range-row { justify-content: center; gap: 6px; flex-wrap: nowrap; }
+  .latest-range-row .level-pill { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+
+  /* "Specific time" lookup tool, under Reading times on the Vocab page */
+  .time-tool-row {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 6px; margin-top: 0.4rem;
+  }
+  .time-tool-frames { display: grid; grid-template-columns: repeat(2, auto); gap: 3px; }
+  .time-tool-ampm { display: flex; flex-direction: column; gap: 3px; }
+  .time-tool-frames .level-pill, .time-tool-ampm .level-pill { padding: 4px 8px; font-size: 12px; }
+  .time-tool-entry { display: flex; align-items: center; gap: 2px; font-weight: 600; color: var(--text-muted); }
+  .time-tool-entry select {
+    background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 5px 6px; font-size: 22px; font-weight: 700;
+    font-family: inherit; cursor: pointer;
+  }
+  .time-tool-output {
+    margin-top: 0.5rem; text-align: center; padding: 0.45rem;
+    background: var(--surface2); border-radius: var(--radius);
+  }
+  /* Sizing standard shared with .number-tool-output below (Specific number
+     and Specific counter): 22px for the big reading, 14px for the romaji
+     underneath. This one used to run smaller (17px) specifically to stop
+     longer strings - a frame word and am/pm stacked on the same line - from
+     wrapping onto a second line, so if that reappears on a narrow phone,
+     revisit this rather than assuming it's a regression. */
+  .time-tool-output .time-tool-jp { display: block; font-size: 22px; font-weight: 700; font-family: 'BIZ UDPGothic', sans-serif; }
+  .time-tool-output .time-tool-rd { display: block; font-size: 14px; font-weight: 600; color: var(--text-muted); margin-top: 2px; }
+  .time-tool-reset-btn {
+    flex-shrink: 0;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--text-muted); font-size: 17px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .time-tool-reset-btn:hover { border-color: var(--border-hover); background: var(--surface2); }
+
+  /* "Specific number" lookup tool, alongside Specific time on the Numbers
+     screen - a big, centered number entry rather than dropdowns, since the
+     range is too wide for a picker to make sense. */
+  .number-tool-input {
+    display: block; width: 100%; box-sizing: border-box; margin-top: 0.4rem;
+    background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 0.5rem; font-size: 32px; font-weight: 800;
+    text-align: center; font-family: inherit;
+  }
+  .number-tool-input:focus { outline: none; border-color: var(--accent); }
+  .number-tool-output { margin-top: 0.5rem; text-align: center; padding: 0.45rem; background: var(--surface2); border-radius: var(--radius); }
+  /* Sizing standard for every "big reading" output on this page (Specific
+     number, Specific counter, and Specific time above): 22px for the
+     reading, 14px for the romaji - any new lookup tool added later should
+     match these rather than picking its own values. */
+  .number-tool-output .number-tool-jp { display: block; font-size: 22px; font-weight: 700; font-family: 'BIZ UDPGothic', sans-serif; }
+  .number-tool-output .number-tool-rd { display: block; font-size: 14px; font-weight: 600; color: var(--text-muted); margin-top: 3px; }
+  .number-tool-hint { font-size: 12px; color: var(--text-muted); margin-top: 0.35rem; text-align: center; }
+
+  /* "Back up my progress" - Settings screen (2026-09-12, replaces the old
+     hidden copy-to-clipboard debug tool). Download saves kanaScores as a
+     dated .json file; Restore reads one back in via a hidden file input
+     triggered by a visible button. See the comment above
+     downloadScoresBackup() for the full reasoning. */
+  .backup-status-msg {
+    display: none; text-align: center; font-size: 12px; font-weight: 600;
+    color: var(--accent); margin-top: 0.4rem;
+  }
+  .backup-status-msg.show { display: block; }
+  .backup-status-msg.error { color: var(--red); }
+
+  /* Katakana reference grid */
+  .kana-ref-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .kana-ref-row {
+    display: flex; gap: 6px;
+    border-radius: var(--radius); border: 1px solid transparent;
+    padding: 4px; cursor: pointer; transition: all 0.15s; user-select: none;
+  }
+  .kana-ref-row:hover { border-color: var(--border-hover); }
+  .kana-ref-row.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .kana-ref-card {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 4px;
+    text-align: center; display: flex; flex-direction: column;
+    align-items: center; gap: 4px; min-width: 0;
+  }
+  .kana-ref-row.selected .kana-ref-card { background: transparent; border-color: transparent; }
+  .kana-ref-card.empty { background: transparent; border-color: transparent; }
+  .kana-ref-card.score-neg3 { background: var(--conf-neg3); }
+  .kana-ref-card.score-neg2 { background: var(--conf-neg2); }
+  .kana-ref-card.score-neg1 { background: var(--conf-neg1); }
+  .kana-ref-card.score-neutral { background: var(--conf-neutral); }
+  .kana-ref-card.score-pos1 { background: var(--conf-pos1); }
+  .kana-ref-card.score-pos2 { background: var(--conf-pos2); }
+  .kana-ref-card.score-pos3 { background: var(--conf-pos3); }
+  .kana-ref-card.score-pos4 { background: var(--conf-pos4); }
+  .kana-ref-card.selected { border-color: var(--accent); background: var(--accent-dim); cursor: pointer; }
+  /* (2026-10-07) Thicker "selected" edge - the 1px gold line was easy to miss.
+     1px border + 2px inset ring = 3px, the same weight Colours tiles use,
+     without the tile changing size (a wider border would reflow the grid).
+     Colours tiles already have a real 3px border, so they skip the ring. */
+  .kana-ref-card.selected, .kana-ref-row.selected, .match-card-select.selected,
+  #match-random-view .group-card.cat-tile.selected { box-shadow: inset 0 0 0 2px var(--accent); }
+  .kana-ref-card.colour-tile.selected { box-shadow: none; }
+  .pill-grid-2row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .kanji-tile-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .kanji-tile-grid .kana-ref-card { flex: 1 1 30%; min-width: 0; cursor: pointer; }
+  .kana-ref-char {
+    font-family: 'BIZ UDPGothic', sans-serif;
+    font-size: 28px; font-weight: 600; color: var(--text);
+    line-height: 1;
+  }
+  .kana-ref-rom {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+  }
+  /* POPUP OVERLAY: the daily card (greeting, date, time, a sentence) and the
+     verb forms window. Shown/hidden with .show, the same way
+     .backup-status-msg does it above. */
+  .proverb-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    align-items: center; justify-content: center; z-index: 999;
+    padding: 20px; box-sizing: border-box;
+  }
+  .proverb-overlay.show { display: flex; }
+  /* Gold edge + shadow on every popup card (2026-10-07) - a plain border
+     disappeared into the dimmed page in dark mode. Same gold as the hold
+     bubble. Shared by the daily sentence and the verb forms window. */
+  .proverb-card {
+    background: var(--surface); border: 1.5px solid var(--accent); box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    border-radius: var(--radius-lg); padding: 1.5rem;
+    max-width: 420px; width: 100%; max-height: 85vh; overflow-y: auto;
+  }
+  /* Greeting + date + time at the top of the proverb screen (2026-10-06) -
+     all in Japanese (kana, since kanji isn't taught yet) with romaji and
+     English underneath, for familiarity with greetings, dates and times.
+     Each line can be tapped to hear it. */
+  /* (2026-10-22) Greeting and sentence each get their own colour (--pc, set
+     at random in showDailyCard) inside the gold-edged card. */
+  .proverb-greeting, .proverb-sentence {
+    text-align: center; border: 1px solid var(--pc, var(--accent)); border-radius: 12px;
+    background: color-mix(in srgb, var(--pc, var(--accent)) 10%, var(--surface));
+    padding: 0.8rem 0.9rem; margin-bottom: 0.9rem;
+  }
+  .proverb-sentence { margin-bottom: 1.2rem; }
+  .proverb-sentence-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--pc, var(--accent)); margin-bottom: 6px; }
+  .sg-line { cursor: pointer; border-radius: var(--radius); padding: 2px 4px; }
+  .sg-line + .sg-line { margin-top: 0.6rem; }
+  .sg-jp { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 18px; color: var(--text); line-height: 1.4; }
+  .sg-ro { font-size: 13px; font-weight: 600; color: var(--text-muted); margin-top: 2px; }
+  .sg-en { font-size: 13px; color: var(--text-dim); font-style: italic; margin-top: 1px; }
+  .pg-line { cursor: pointer; border-radius: var(--radius); padding: 2px 4px; }
+  .pg-line + .pg-line { margin-top: 0.55rem; }
+  .pg-jp { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 17px; color: var(--text); line-height: 1.3; }
+  .pg-line.pg-hello .pg-jp { font-size: 24px; }
+  .pg-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+  .pg-sub .pg-en { color: var(--text-dim); }
+  /* Verb forms window (2026-10-07) - see showVerbFormsPopup. */
+  .proverb-card.vf-card { padding: 1rem 0.85rem; }
+  .vf-title { text-align: center; font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 30px; color: var(--text); cursor: pointer; }
+  .vf-title-sub { text-align: center; font-size: 13px; color: var(--text-muted); margin: 2px 0 0.9rem; }
+  .vf-section { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin: 0.4rem 0 6px; }
+  .vf-grid { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px; align-items: stretch; }
+  .vf-head { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: center; }
+  .vf-rowlabel { font-size: 11px; font-weight: 700; color: var(--text-muted); writing-mode: vertical-rl; transform: rotate(180deg); text-align: center; }
+  .vf-cell { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.45rem 0.35rem; text-align: center; cursor: pointer; background: var(--surface); min-width: 0; }
+  .vf-jp { font-family: 'BIZ UDPGothic', sans-serif; font-weight: 700; font-size: 15px; color: var(--text); line-height: 1.3; white-space: nowrap; overflow: hidden; }
+  .vf-ro { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; }
+  .vf-en { font-size: 11px; color: var(--text-dim); font-style: italic; margin-top: 1px; }
+  .vf-q-verb { font-family: 'BIZ UDPGothic', sans-serif; font-size: 20px; font-weight: 700; color: var(--text-muted); margin-top: 6px; }
+  /* Listening (2026-10-07) */
+  .listen-play { width: 96px; height: 96px; border-radius: 50%; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .listen-play:active { transform: scale(0.96); }
+  .type-answer-input.type-answer-jp { font-family: 'BIZ UDPGothic', sans-serif; }
+  /* Particle drill (2026-10-07) */
+  .options.pt-options { grid-template-columns: repeat(4, 1fr); }
+  .options.pt-options .opt { padding: 10px 4px 8px; }
+  .options.pt-options .opt .opt-jp { font-size: 22px; }
+  .options.sk-options .opt .opt-jp { font-size: 30px; }
+  .pt-line { text-align: center; line-height: 1.5; }
+  .pt-line + .pt-line { margin-top: 0.7rem; }
+  .pt-jp { font-weight: 700; }
+  .pt-tok { white-space: nowrap; } /* wrap between words, never inside one */
+  .pt-en { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; font-weight: 400; font-style: italic; color: var(--text-dim); margin-top: 4px; line-height: 1.35; }
+  .pt-blank { display: inline-block; min-width: 1.4em; border-bottom: 3px solid var(--accent); color: var(--green); text-align: center; }
+  .pt-blank.filled { border-bottom-color: var(--green); }
+  .vf-q-en { font-size: 14px; font-weight: 400; color: var(--text-dim); margin-top: 2px; }
+  .vf-note { font-size: 12px; color: var(--text-dim); margin: 0.5rem 0 0.9rem; line-height: 1.4; }
+  /* Kana stroke-order bubble (2026-10-16, styles from the Kanji Strokes app). */
+  .tile-peek-bubble.peek-kana { display: flex; align-items: center; gap: 12px; text-align: left; }
+  .tile-peek-bubble .peek-svg { width: 84px; height: 84px; flex: none; background: var(--surface2); border-radius: 8px; }
+  .tile-peek-bubble .peek-kana-text .peek-romaji { margin-top: 0; }
+  .peek-stroke { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 4; vector-effect: non-scaling-stroke; } /* screen px */
+  .peek-stroke.ghost { stroke: color-mix(in srgb, var(--text) 14%, transparent); }
+  .peek-stroke.done { stroke: var(--text); }
+  /* Word strip (2026-10-17): shaded panel, gold ink - not another copy of the word. */
+  .tile-peek-bubble .peek-word-svg { display: block; margin: 8px auto 0; padding: 5px 7px; box-sizing: content-box; background: var(--surface2); border-radius: 8px; overflow: visible; }
+  .peek-stroke.word { stroke: var(--accent); stroke-width: 2.4; } /* screen px (non-scaling) */
+  .peek-word-static { font-family: 'BIZ UDPGothic', sans-serif; font-size: 88px; fill: var(--text-dim); }
+  .kana-ref-card.tile-peeking { border-color: var(--accent); }
+  .kana-hold-hint { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+  .tile-peek-bubble .peek-hint { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-top: 6px; border-top: 1px solid var(--border); padding-top: 5px; }
+  .tile-peek-bubble.peek-armed { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+  .tile-peek-bubble.peek-armed .peek-hint { color: var(--accent); }
+  /* Share card in Settings (2026-10-06) - QR is always black on white so
+     phone cameras read it in dark mode too. */
+  #share-app-card { flex-direction: column; align-items: stretch; gap: 0.6rem; cursor: default; }
+  .share-qr { display: block; width: 168px; height: 168px; margin: 0.2rem auto 0; border-radius: 6px; }
+  .share-url { text-align: center; font-size: 12px; color: var(--text-muted); word-break: break-all; }
+  .share-divider { border-top: 1px solid var(--border); margin: 0.3rem 0 0.1rem; }
+  .share-link { display: block; text-decoration: none; color: inherit; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.75rem; }
+  .share-link .group-name { color: var(--accent); }
+</style>
+</head>
+<body>
+<script src="test-errors.js"></script>
+
+  <!-- BUG FIX (2026-09-13): this used to sit right before </body>, AFTER
+       the closing </script> tag further down. maybeShowDailyCard()
+       runs synchronously as part of that script's own top-level init
+       sequence, which executes DURING initial parse - at that exact
+       moment the browser hasn't parsed any HTML past </script> yet, so
+       document.getElementById('proverb-overlay') returned null and
+       showProverbOverlay bailed out silently (no error - just never
+       showed), while the PROVERB_SEEN_KEY date stamp still got written
+       right before that failed lookup. The easter egg (tapping the
+       header) only ever worked because by the time someone can actually
+       tap it, the whole page has long since finished loading. Moved here,
+       first thing after <body>, so it's guaranteed to exist before the
+       script that references it ever runs - confirmed by Andrew across
+       several devices on 2026-09-13, so this wasn't one-off. -->
+  <div class="proverb-overlay" id="proverb-overlay" onclick="if (event.target === this) dismissProverbOverlay();">
+    <div class="proverb-card">
+      <div class="proverb-greeting" id="proverb-greeting"></div>
+      <div class="proverb-sentence" id="proverb-sentence"></div>
+      <button class="start-btn" onclick="dismissProverbOverlay()">Continue</button>
+    </div>
+  </div>
+
+  <!-- Verb forms window (2026-10-07) - hold a verb card, slide towards the
+       bubble, let go. Same overlay as the daily sentence above. -->
+  <div class="proverb-overlay" id="verb-forms-overlay" onclick="if (event.target === this && Date.now() - (this._openedAt || 0) > 400) dismissVerbFormsPopup();">
+    <div class="proverb-card vf-card">
+      <div id="verb-forms-body"></div>
+      <button class="start-btn" onclick="dismissVerbFormsPopup()">Close</button>
+    </div>
+  </div>
+
+<header>
+  <!-- Heading line (2026-10-16): the sound and settings buttons moved up here
+       from the tab row, to make room for the Grammar tab. -->
+  <div class="app-heading-row">
+    <div class="app-heading"><span class="app-heading-tap" onclick="triggerSpontaneousProverbs()">日本語</span> <span>drill</span></div>
+    <div class="head-btns">
+      <!-- Global sound switch (2026-10-02) - off = the app makes no sound at
+           all (see soundAllowed), so it never cuts into music. -->
+      <button class="settings-btn" id="sound-btn" onclick="toggleSoundOn()" title="Sound on" aria-label="Sound on"></button>
+      <button class="settings-btn" id="settings-btn" onclick="toggleSettings()" title="Settings" aria-label="Settings">⚙</button>
+    </div>
+  </div>
+  <div class="nav-row">
+    <div class="nav-pills">
+      <!-- Tabs in Japanese, page titles in English (Andrew, 2026-10-23). Kana
+           for now; each can take its kanji (言葉 作文 数字 文法) once taught. -->
+      <button class="nav-pill" id="nav-kana" onclick="showKanaSelection()" lang="ja">かな</button>
+      <button class="nav-pill" id="nav-kanji" onclick="tryResumeKanji()" lang="ja">漢字</button>
+      <button class="nav-pill active" id="nav-match" onclick="tryResumeMatch()" lang="ja">ことば</button>
+      <button class="nav-pill" id="nav-build" onclick="showBuildPage()" lang="ja">さくぶん</button>
+      <button class="nav-pill" id="nav-numbers" onclick="tryResumeOrNumbers()" lang="ja">すうじ</button>
+      <button class="nav-pill" id="nav-grammar" onclick="showGrammarPage()" lang="ja">ぶんぽう</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- Settings screen -->
+  <div class="screen" id="screen-settings">
+    <div class="settings-title">Settings</div>
+    <div class="settings-sub">Everything is stored on this device only.</div>
+
+    <div style="text-align:center; margin-top:0.9rem; margin-bottom:0.4rem; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+      <a href="./instructions.html" target="_blank" style="display:inline-block; font-size:13px; font-weight:600; color:var(--text-muted); text-decoration:none; border:1px solid var(--border); border-radius:99px; padding:8px 18px;">How this app works →</a>
+      <a href="./changelog.html" target="_blank" id="whats-new-link" style="display:inline-block; font-size:13px; font-weight:600; color:var(--text-muted); text-decoration:none; border:1px solid var(--border); border-radius:99px; padding:8px 18px; background:transparent;">What's new →</a>
+    </div>
+
+    <!-- Install card (2026-10-13): only shown when the app is open as a web
+         page rather than installed - see refreshInstallCard(). -->
+    <div class="group-card install-card" id="install-card" style="display:none;">
+      <div class="group-info">
+        <div class="group-name">Install the app</div>
+        <div class="group-count" id="install-card-steps"></div>
+        <div class="group-count install-why">Installed, it opens full screen from its own icon and works offline.</div>
+      </div>
+      <button type="button" class="install-btn" id="install-btn" onclick="runInstallPrompt()" style="display:none;">Install</button>
+    </div>
+
+    <div class="group-card" id="theme-toggle-card" onclick="toggleTheme()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Light theme</div>
+        <div class="group-count">Switches from the default dark look to a light one</div>
+      </div>
+      <div class="toggle" id="theme-toggle"></div>
+    </div>
+
+    <div class="group-card" id="show-kanji-toggle-card" onclick="toggleShowKanji()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Show Kanji content</div>
+        <div class="group-count">The Kanji section isn't part of the course — on by default</div>
+      </div>
+      <div class="toggle" id="show-kanji-toggle"></div>
+    </div>
+
+    <div class="group-card" id="hint-penalty-toggle-card" onclick="toggleHintPenalty()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Half credit for hinted answers</div>
+        <div class="group-count">Using a hint before answering halves the confidence boost for a correct answer</div>
+      </div>
+      <div class="toggle" id="hint-penalty-toggle"></div>
+    </div>
+
+    <div class="group-card" id="decay-colours-toggle-card" onclick="toggleDecayAffectsColours()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Fade confidence colours over time</div>
+        <div class="group-count">Also fades the colours themselves over time, not just drill odds — off by default</div>
+      </div>
+      <div class="toggle" id="decay-colours-toggle"></div>
+    </div>
+
+    <!-- "Work offline" toggle removed 2026-10-06 - offline is now always on
+         (see syncServiceWorkerRegistration). -->
+
+    <div class="group-card" id="show-tourist-toggle-card" onclick="toggleShowTourist()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Tourist words</div>
+        <div class="group-count">About 250 words and phrases for a trip to Japan, in sections (food, getting around, the hotel, shops, health…) — adds a Tourist pill, off by default</div>
+      </div>
+      <div class="toggle" id="show-tourist-toggle"></div>
+    </div>
+
+    <div class="group-card" id="show-untaught-toggle-card" onclick="toggleShowUntaught()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Untaught vocabulary</div>
+        <div class="group-count">Real Japanese from photos (menus, stations, hotels, signs…) and any private word lists — outside the taught course, adds an Untaught pill, off by default</div>
+      </div>
+      <div class="toggle" id="show-untaught-toggle"></div>
+    </div>
+
+    <!-- Hidden 2026-10-06 until there is something in Andrew mode again - remove display:none to bring the toggle back. -->
+    <div class="group-card dimmed" id="show-andrew-mode-toggle-card" onclick="toggleShowAndrewMode()" style="cursor:pointer; display:none;">
+      <div class="group-info">
+        <div class="group-name">Activate Andrew mode</div>
+        <div class="group-count">Staging area for whatever's next — currently empty</div>
+      </div>
+      <div class="toggle" id="show-andrew-mode-toggle"></div>
+    </div>
+
+    <div class="group-card" id="backup-scores-card" style="cursor:default;">
+      <div class="group-info">
+        <div class="group-name">Back up my progress</div>
+        <div class="group-count">Saves your scores to a file you can restore later</div>
+      </div>
+      <button class="start-btn" onclick="downloadScoresBackup()">Download backup</button>
+      <button class="start-btn" onclick="triggerRestoreFilePicker()">Restore from backup</button>
+      <input type="file" id="restore-file-input" accept="application/json,.json" style="display:none;" onchange="handleRestoreFileSelected(event)">
+      <div class="backup-status-msg" id="backup-status-msg"></div>
+    </div>
+
+    <!-- Private vocab (2026-10-02) - see PRIVATE VOCAB PACKS in the script. -->
+    <div class="group-card" id="private-vocab-card" style="cursor:default;">
+      <div class="group-info">
+        <div class="group-name">Private vocab</div>
+        <div class="group-count" id="private-vocab-status">Add extra word lists from a file, kept on this device only (e.g. textbook vocab that isn't part of the shared app).</div>
+      </div>
+      <button class="start-btn" onclick="triggerPrivateVocabPicker()">Load file</button>
+      <button class="start-btn" id="private-vocab-remove-btn" onclick="removePrivateVocab()" style="display:none;">Remove</button>
+      <input type="file" id="private-vocab-input" accept="application/json,.json" style="display:none;" onchange="handlePrivateVocabSelected(event)">
+      <div class="backup-status-msg" id="private-vocab-msg"></div>
+    </div>
+
+    <!-- Share card (2026-10-06): QR for this app + links to the sister apps.
+         Kanji cards linked 2026-10-15 at Andrew's request (its cards stay
+         behind that app's own password). -->
+    <div class="group-card" id="share-app-card">
+      <div class="group-info">
+        <div class="group-name">Share this app</div>
+        <div class="group-count">Let a friend scan this to open the app on their phone</div>
+      </div>
+      <svg class="share-qr" viewBox="-2 -2 37 37" role="img" aria-label="QR code for the app" shape-rendering="crispEdges"><rect x="-2" y="-2" width="37" height="37" fill="#fff"/><path fill="#000" d="M0 0h1v1h-1zM1 0h1v1h-1zM2 0h1v1h-1zM3 0h1v1h-1zM4 0h1v1h-1zM5 0h1v1h-1zM6 0h1v1h-1zM9 0h1v1h-1zM12 0h1v1h-1zM13 0h1v1h-1zM16 0h1v1h-1zM17 0h1v1h-1zM18 0h1v1h-1zM19 0h1v1h-1zM22 0h1v1h-1zM23 0h1v1h-1zM26 0h1v1h-1zM27 0h1v1h-1zM28 0h1v1h-1zM29 0h1v1h-1zM30 0h1v1h-1zM31 0h1v1h-1zM32 0h1v1h-1zM0 1h1v1h-1zM6 1h1v1h-1zM10 1h1v1h-1zM12 1h1v1h-1zM13 1h1v1h-1zM14 1h1v1h-1zM15 1h1v1h-1zM17 1h1v1h-1zM20 1h1v1h-1zM21 1h1v1h-1zM22 1h1v1h-1zM26 1h1v1h-1zM32 1h1v1h-1zM0 2h1v1h-1zM2 2h1v1h-1zM3 2h1v1h-1zM4 2h1v1h-1zM6 2h1v1h-1zM8 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM13 2h1v1h-1zM16 2h1v1h-1zM17 2h1v1h-1zM18 2h1v1h-1zM20 2h1v1h-1zM21 2h1v1h-1zM26 2h1v1h-1zM28 2h1v1h-1zM29 2h1v1h-1zM30 2h1v1h-1zM32 2h1v1h-1zM0 3h1v1h-1zM2 3h1v1h-1zM3 3h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM14 3h1v1h-1zM16 3h1v1h-1zM20 3h1v1h-1zM22 3h1v1h-1zM24 3h1v1h-1zM26 3h1v1h-1zM28 3h1v1h-1zM29 3h1v1h-1zM30 3h1v1h-1zM32 3h1v1h-1zM0 4h1v1h-1zM2 4h1v1h-1zM3 4h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM9 4h1v1h-1zM13 4h1v1h-1zM15 4h1v1h-1zM17 4h1v1h-1zM18 4h1v1h-1zM21 4h1v1h-1zM23 4h1v1h-1zM26 4h1v1h-1zM28 4h1v1h-1zM29 4h1v1h-1zM30 4h1v1h-1zM32 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM10 5h1v1h-1zM11 5h1v1h-1zM12 5h1v1h-1zM15 5h1v1h-1zM16 5h1v1h-1zM17 5h1v1h-1zM20 5h1v1h-1zM22 5h1v1h-1zM26 5h1v1h-1zM32 5h1v1h-1zM0 6h1v1h-1zM1 6h1v1h-1zM2 6h1v1h-1zM3 6h1v1h-1zM4 6h1v1h-1zM5 6h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h1v1h-1zM20 6h1v1h-1zM22 6h1v1h-1zM24 6h1v1h-1zM26 6h1v1h-1zM27 6h1v1h-1zM28 6h1v1h-1zM29 6h1v1h-1zM30 6h1v1h-1zM31 6h1v1h-1zM32 6h1v1h-1zM8 7h1v1h-1zM9 7h1v1h-1zM14 7h1v1h-1zM15 7h1v1h-1zM18 7h1v1h-1zM21 7h1v1h-1zM22 7h1v1h-1zM24 7h1v1h-1zM0 8h1v1h-1zM2 8h1v1h-1zM3 8h1v1h-1zM4 8h1v1h-1zM5 8h1v1h-1zM6 8h1v1h-1zM9 8h1v1h-1zM13 8h1v1h-1zM14 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM22 8h1v1h-1zM23 8h1v1h-1zM24 8h1v1h-1zM26 8h1v1h-1zM27 8h1v1h-1zM28 8h1v1h-1zM29 8h1v1h-1zM30 8h1v1h-1zM1 9h1v1h-1zM3 9h1v1h-1zM4 9h1v1h-1zM5 9h1v1h-1zM18 9h1v1h-1zM19 9h1v1h-1zM20 9h1v1h-1zM23 9h1v1h-1zM26 9h1v1h-1zM27 9h1v1h-1zM29 9h1v1h-1zM30 9h1v1h-1zM32 9h1v1h-1zM0 10h1v1h-1zM2 10h1v1h-1zM3 10h1v1h-1zM4 10h1v1h-1zM6 10h1v1h-1zM7 10h1v1h-1zM9 10h1v1h-1zM10 10h1v1h-1zM15 10h1v1h-1zM18 10h1v1h-1zM21 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM28 10h1v1h-1zM30 10h1v1h-1zM31 10h1v1h-1zM1 11h1v1h-1zM4 11h1v1h-1zM8 11h1v1h-1zM9 11h1v1h-1zM11 11h1v1h-1zM14 11h1v1h-1zM20 11h1v1h-1zM21 11h1v1h-1zM23 11h1v1h-1zM24 11h1v1h-1zM25 11h1v1h-1zM26 11h1v1h-1zM28 11h1v1h-1zM29 11h1v1h-1zM30 11h1v1h-1zM32 11h1v1h-1zM0 12h1v1h-1zM4 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM9 12h1v1h-1zM11 12h1v1h-1zM12 12h1v1h-1zM15 12h1v1h-1zM18 12h1v1h-1zM19 12h1v1h-1zM24 12h1v1h-1zM25 12h1v1h-1zM28 12h1v1h-1zM29 12h1v1h-1zM32 12h1v1h-1zM0 13h1v1h-1zM1 13h1v1h-1zM2 13h1v1h-1zM3 13h1v1h-1zM4 13h1v1h-1zM5 13h1v1h-1zM7 13h1v1h-1zM8 13h1v1h-1zM9 13h1v1h-1zM14 13h1v1h-1zM15 13h1v1h-1zM16 13h1v1h-1zM20 13h1v1h-1zM21 13h1v1h-1zM23 13h1v1h-1zM26 13h1v1h-1zM30 13h1v1h-1zM31 13h1v1h-1zM32 13h1v1h-1zM0 14h1v1h-1zM3 14h1v1h-1zM5 14h1v1h-1zM6 14h1v1h-1zM12 14h1v1h-1zM13 14h1v1h-1zM14 14h1v1h-1zM17 14h1v1h-1zM19 14h1v1h-1zM24 14h1v1h-1zM25 14h1v1h-1zM26 14h1v1h-1zM29 14h1v1h-1zM30 14h1v1h-1zM31 14h1v1h-1zM5 15h1v1h-1zM8 15h1v1h-1zM9 15h1v1h-1zM10 15h1v1h-1zM11 15h1v1h-1zM16 15h1v1h-1zM19 15h1v1h-1zM20 15h1v1h-1zM21 15h1v1h-1zM23 15h1v1h-1zM24 15h1v1h-1zM25 15h1v1h-1zM26 15h1v1h-1zM29 15h1v1h-1zM30 15h1v1h-1zM0 16h1v1h-1zM1 16h1v1h-1zM3 16h1v1h-1zM6 16h1v1h-1zM7 16h1v1h-1zM8 16h1v1h-1zM9 16h1v1h-1zM10 16h1v1h-1zM11 16h1v1h-1zM12 16h1v1h-1zM17 16h1v1h-1zM19 16h1v1h-1zM22 16h1v1h-1zM25 16h1v1h-1zM27 16h1v1h-1zM28 16h1v1h-1zM29 16h1v1h-1zM32 16h1v1h-1zM1 17h1v1h-1zM2 17h1v1h-1zM3 17h1v1h-1zM5 17h1v1h-1zM7 17h1v1h-1zM8 17h1v1h-1zM9 17h1v1h-1zM11 17h1v1h-1zM12 17h1v1h-1zM13 17h1v1h-1zM16 17h1v1h-1zM17 17h1v1h-1zM18 17h1v1h-1zM19 17h1v1h-1zM20 17h1v1h-1zM22 17h1v1h-1zM23 17h1v1h-1zM26 17h1v1h-1zM27 17h1v1h-1zM29 17h1v1h-1zM30 17h1v1h-1zM0 18h1v1h-1zM4 18h1v1h-1zM5 18h1v1h-1zM6 18h1v1h-1zM7 18h1v1h-1zM8 18h1v1h-1zM12 18h1v1h-1zM15 18h1v1h-1zM16 18h1v1h-1zM17 18h1v1h-1zM21 18h1v1h-1zM22 18h1v1h-1zM24 18h1v1h-1zM25 18h1v1h-1zM27 18h1v1h-1zM28 18h1v1h-1zM30 18h1v1h-1zM31 18h1v1h-1zM0 19h1v1h-1zM9 19h1v1h-1zM12 19h1v1h-1zM13 19h1v1h-1zM15 19h1v1h-1zM16 19h1v1h-1zM17 19h1v1h-1zM18 19h1v1h-1zM20 19h1v1h-1zM21 19h1v1h-1zM22 19h1v1h-1zM25 19h1v1h-1zM27 19h1v1h-1zM28 19h1v1h-1zM29 19h1v1h-1zM30 19h1v1h-1zM31 19h1v1h-1zM32 19h1v1h-1zM1 20h1v1h-1zM3 20h1v1h-1zM6 20h1v1h-1zM7 20h1v1h-1zM9 20h1v1h-1zM11 20h1v1h-1zM13 20h1v1h-1zM15 20h1v1h-1zM16 20h1v1h-1zM21 20h1v1h-1zM22 20h1v1h-1zM27 20h1v1h-1zM28 20h1v1h-1zM29 20h1v1h-1zM31 20h1v1h-1zM32 20h1v1h-1zM0 21h1v1h-1zM1 21h1v1h-1zM2 21h1v1h-1zM3 21h1v1h-1zM4 21h1v1h-1zM5 21h1v1h-1zM7 21h1v1h-1zM9 21h1v1h-1zM11 21h1v1h-1zM12 21h1v1h-1zM15 21h1v1h-1zM17 21h1v1h-1zM18 21h1v1h-1zM21 21h1v1h-1zM23 21h1v1h-1zM26 21h1v1h-1zM30 21h1v1h-1zM32 21h1v1h-1zM0 22h1v1h-1zM2 22h1v1h-1zM4 22h1v1h-1zM5 22h1v1h-1zM6 22h1v1h-1zM7 22h1v1h-1zM8 22h1v1h-1zM13 22h1v1h-1zM14 22h1v1h-1zM15 22h1v1h-1zM16 22h1v1h-1zM18 22h1v1h-1zM20 22h1v1h-1zM24 22h1v1h-1zM27 22h1v1h-1zM28 22h1v1h-1zM30 22h1v1h-1zM31 22h1v1h-1zM0 23h1v1h-1zM3 23h1v1h-1zM11 23h1v1h-1zM15 23h1v1h-1zM19 23h1v1h-1zM20 23h1v1h-1zM21 23h1v1h-1zM25 23h1v1h-1zM28 23h1v1h-1zM29 23h1v1h-1zM30 23h1v1h-1zM32 23h1v1h-1zM0 24h1v1h-1zM6 24h1v1h-1zM7 24h1v1h-1zM8 24h1v1h-1zM9 24h1v1h-1zM12 24h1v1h-1zM14 24h1v1h-1zM15 24h1v1h-1zM16 24h1v1h-1zM17 24h1v1h-1zM19 24h1v1h-1zM20 24h1v1h-1zM22 24h1v1h-1zM24 24h1v1h-1zM25 24h1v1h-1zM26 24h1v1h-1zM27 24h1v1h-1zM28 24h1v1h-1zM8 25h1v1h-1zM11 25h1v1h-1zM16 25h1v1h-1zM19 25h1v1h-1zM20 25h1v1h-1zM24 25h1v1h-1zM28 25h1v1h-1zM30 25h1v1h-1zM32 25h1v1h-1zM0 26h1v1h-1zM1 26h1v1h-1zM2 26h1v1h-1zM3 26h1v1h-1zM4 26h1v1h-1zM5 26h1v1h-1zM6 26h1v1h-1zM10 26h1v1h-1zM11 26h1v1h-1zM13 26h1v1h-1zM14 26h1v1h-1zM15 26h1v1h-1zM18 26h1v1h-1zM21 26h1v1h-1zM22 26h1v1h-1zM23 26h1v1h-1zM24 26h1v1h-1zM26 26h1v1h-1zM28 26h1v1h-1zM30 26h1v1h-1zM0 27h1v1h-1zM6 27h1v1h-1zM8 27h1v1h-1zM9 27h1v1h-1zM11 27h1v1h-1zM13 27h1v1h-1zM14 27h1v1h-1zM15 27h1v1h-1zM20 27h1v1h-1zM21 27h1v1h-1zM23 27h1v1h-1zM24 27h1v1h-1zM28 27h1v1h-1zM29 27h1v1h-1zM30 27h1v1h-1zM31 27h1v1h-1zM32 27h1v1h-1zM0 28h1v1h-1zM2 28h1v1h-1zM3 28h1v1h-1zM4 28h1v1h-1zM6 28h1v1h-1zM8 28h1v1h-1zM13 28h1v1h-1zM18 28h1v1h-1zM24 28h1v1h-1zM25 28h1v1h-1zM26 28h1v1h-1zM27 28h1v1h-1zM28 28h1v1h-1zM29 28h1v1h-1zM31 28h1v1h-1zM32 28h1v1h-1zM0 29h1v1h-1zM2 29h1v1h-1zM3 29h1v1h-1zM4 29h1v1h-1zM6 29h1v1h-1zM8 29h1v1h-1zM10 29h1v1h-1zM12 29h1v1h-1zM15 29h1v1h-1zM16 29h1v1h-1zM19 29h1v1h-1zM22 29h1v1h-1zM25 29h1v1h-1zM28 29h1v1h-1zM30 29h1v1h-1zM31 29h1v1h-1zM32 29h1v1h-1zM0 30h1v1h-1zM2 30h1v1h-1zM3 30h1v1h-1zM4 30h1v1h-1zM6 30h1v1h-1zM8 30h1v1h-1zM9 30h1v1h-1zM11 30h1v1h-1zM12 30h1v1h-1zM13 30h1v1h-1zM14 30h1v1h-1zM21 30h1v1h-1zM23 30h1v1h-1zM26 30h1v1h-1zM27 30h1v1h-1zM29 30h1v1h-1zM30 30h1v1h-1zM0 31h1v1h-1zM6 31h1v1h-1zM9 31h1v1h-1zM10 31h1v1h-1zM11 31h1v1h-1zM14 31h1v1h-1zM16 31h1v1h-1zM18 31h1v1h-1zM20 31h1v1h-1zM21 31h1v1h-1zM22 31h1v1h-1zM25 31h1v1h-1zM26 31h1v1h-1zM28 31h1v1h-1zM29 31h1v1h-1zM30 31h1v1h-1zM0 32h1v1h-1zM1 32h1v1h-1zM2 32h1v1h-1zM3 32h1v1h-1zM4 32h1v1h-1zM5 32h1v1h-1zM6 32h1v1h-1zM8 32h1v1h-1zM13 32h1v1h-1zM17 32h1v1h-1zM20 32h1v1h-1zM22 32h1v1h-1zM23 32h1v1h-1zM24 32h1v1h-1zM25 32h1v1h-1zM27 32h1v1h-1zM31 32h1v1h-1z"/></svg>
+      <div class="share-url">andrewbrittle.github.io/Japanese-drill-L4</div>
+      <div class="share-divider"></div>
+      <a class="share-link" href="https://andrewbrittle.github.io/ab-kcdrill/" target="_blank" rel="noopener">
+        <div class="group-name">Kanji cards →</div>
+        <div class="group-count">Drill a set of the 500 most common kanji</div>
+      </a>
+      <div class="share-divider"></div>
+      <a class="share-link" href="https://andrewbrittle.github.io/ab-kcdraw/" target="_blank" rel="noopener">
+        <div class="group-name">Kanji strokes →</div>
+        <div class="group-count">Practise writing hiragana, katakana and kanji stroke by stroke</div>
+      </a>
+    </div>
+
+    <div style="text-align:center; font-size:12px; color:var(--accent); margin-top:0.75rem;">Any problems: Andrew 07973 835165</div>
+    <div style="text-align:center; font-size:11px; color:var(--text-dim); margin-top:0.5rem;">Kana stroke order from <a href="https://kanjivg.tagaini.net/" target="_blank" rel="noopener" style="color:inherit;">KanjiVG</a> © Ulrich Apel, CC BY-SA 3.0.</div>
+    <div style="text-align:center; font-size:12px; font-weight:600; color:var(--text-dim); margin-top:0.75rem;">L4 · v261106.001 · core test 2611080038</div>
+  </div>
+
+  <!-- Katakana settings screen -->
+  <!-- Hiragana reference screen -->
+  <div class="screen" id="screen-kana-selection">
+    <div class="settings-title">Kana</div>
+    <div class="settings-sub">Tap a row to drill that set.<br>Inside, touch and hold any character to see its strokes.</div>
+    <!-- Hiragana/Katakana merged into one index page here (2026-09-22,
+         Andrew) - one nav pill instead of two, six rows instead of two
+         in-screen pill-switchers. showHiraganaSelection/showKatakanaSelection
+         now take the section as an argument instead of always defaulting to
+         Base and switching via an in-screen pill row (see the comment on
+         those functions) - the two screens below are otherwise unchanged,
+         just entered with a fixed section instead of a switchable one. -->
+    <div class="group-card cat-tile" id="kana-hiragana-base-card" onclick="showHiraganaSelection('base')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Hiragana</div></div>
+      <div class="cat-bar" id="kana-hiragana-base-swatch"></div>
+    </div>
+    <div class="group-card cat-tile" id="kana-hiragana-diacritics-card" onclick="showHiraganaSelection('diacritics')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Hiragana — Dakuten / handakuten</div></div>
+      <div class="cat-bar" id="kana-hiragana-diacritics-swatch"></div>
+    </div>
+    <div class="group-card cat-tile" id="kana-hiragana-youon-card" onclick="showHiraganaSelection('youon')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Hiragana — Contracted</div></div>
+      <div class="cat-bar" id="kana-hiragana-youon-swatch"></div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="group-card cat-tile" id="kana-katakana-base-card" onclick="showKatakanaSelection('base')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Katakana</div></div>
+      <div class="cat-bar" id="kana-katakana-base-swatch"></div>
+    </div>
+    <div class="group-card cat-tile" id="kana-katakana-diacritics-card" onclick="showKatakanaSelection('diacritics')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Katakana — Dakuten / handakuten</div></div>
+      <div class="cat-bar" id="kana-katakana-diacritics-swatch"></div>
+    </div>
+    <div class="group-card cat-tile" id="kana-katakana-youon-card" onclick="showKatakanaSelection('youon')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Katakana — Contracted</div></div>
+      <div class="cat-bar" id="kana-katakana-youon-swatch"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-hiragana-selection">
+    <div class="settings-title" id="hiragana-selection-title">Hiragana</div>
+    <div class="settings-sub" id="hiragana-selection-sub">Tap a row to select it for drilling.</div>
+    <div class="vocab-ref-card" id="hiragana-voicing-ref-card" style="display:none;" onclick="showKanaVoicingReference('hiragana')">
+      <span>Dakuten &amp; handakuten sound shifts — reference</span><span class="vocab-ref-arrow">→</span>
+    </div>
+    <div class="group-card emphasis" id="hiragana-select-all-card" onclick="toggleSelectAllHiragana()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name" id="hiragana-select-all-label">Select all — Base</div>
+      </div>
+      <div style="font-size:20px; color:var(--text-muted);">→</div>
+    </div>
+    <div id="hiragana-grid-base"></div>
+    <div id="hiragana-grid-diacritics" style="display:none;"></div>
+    <div id="hiragana-grid-youon" style="display:none;"></div>
+    <div class="group-card" id="direction-card-ref-hira" onclick="toggleDirection()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name" id="direction-name-ref-hira">Kana → romaji</div>
+        <div class="group-count" id="direction-sub-ref-hira">See a character, pick the reading. Tap to reverse.</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+    <button class="start-btn" id="hira-selection-drill-btn" onclick="drillHiraganaSelection()" disabled style="margin-top:0.5rem;">Drill with this selection</button>
+  </div>
+
+  <!-- Katakana reference screen -->
+  <div class="screen" id="screen-katakana-selection">
+    <div class="settings-title" id="katakana-selection-title">Katakana</div>
+    <div class="settings-sub" id="katakana-selection-sub">Tap a row to select it for drilling.</div>
+    <div class="vocab-ref-card" id="katakana-voicing-ref-card" style="display:none;" onclick="showKanaVoicingReference('katakana')">
+      <span>Dakuten &amp; handakuten sound shifts — reference</span><span class="vocab-ref-arrow">→</span>
+    </div>
+    <div class="group-card emphasis" id="katakana-select-all-card" onclick="toggleSelectAllKatakana()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name" id="katakana-select-all-label">Select all — Base</div>
+      </div>
+      <div style="font-size:20px; color:var(--text-muted);">→</div>
+    </div>
+    <div id="katakana-grid-base"></div>
+    <div id="katakana-grid-diacritics" style="display:none;"></div>
+    <div id="katakana-grid-youon" style="display:none;"></div>
+    <div class="group-card" id="direction-card-ref" onclick="toggleDirection()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name" id="direction-name-ref">Kana → romaji</div>
+        <div class="group-count" id="direction-sub-ref">See a character, pick the reading. Tap to reverse.</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+    <div class="group-card" id="hiragana-answers-card-ref" onclick="toggleHiraganaOnKatakana()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Show hiragana on answers</div>
+        <div class="group-count">Match the katakana to its hiragana equivalent instead of romaji</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+    <button class="start-btn" id="kata-selection-drill-btn" onclick="drillKatakanaSelection()" disabled style="margin-top:0.5rem;">Drill with this selection</button>
+  </div>
+
+  <!-- Kanji settings screen -->
+  <!-- KANJI INDEX (2026-10-08) - same shape as Kana and Vocab: a list of
+       cards, each opening its own selection screen, then Start. It used to be
+       one screen with a row of section pills and the chosen section's tiles
+       underneath, the one place in the app built that way (Andrew). Random
+       20 from all keeps its place at the top. -->
+  <div class="screen" id="screen-kanji-index">
+    <div class="settings-title">Kanji</div>
+    <div class="settings-sub">Tap a set to choose kanji to drill.</div>
+    <div class="group-card cat-tile" id="kanji-all-card" onclick="startRandomKanji()" style="cursor:pointer;">
+      <div class="cat-tile-top cat-tile-top-stack">
+        <div class="group-name">Random 20 from all</div>
+        <div class="random-choice-desc">20 kanji from every set, weakest more often</div>
+      </div>
+      <div class="cat-bar" id="kanji-index-swatch-all"></div>
+    </div>
+    <div class="tier-off-note">You can turn this page off in Settings (Show Kanji content).</div>
+    <div class="section-divider"></div>
+    <div class="group-card cat-tile" data-kanji-section="numbers-time" onclick="showKanjiSectionSelection('numbers-time')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Numbers</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-numbers-time"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="nature-body" onclick="showKanjiSectionSelection('nature-body')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Nature</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-nature-body"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="food" onclick="showKanjiSectionSelection('food')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Food</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-food"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="places" onclick="showKanjiSectionSelection('places')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Places</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-places"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="directions-travel" onclick="showKanjiSectionSelection('directions-travel')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Travel</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-directions-travel"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="people" onclick="showKanjiSectionSelection('people')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">People</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-people"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="general" onclick="showKanjiSectionSelection('general')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">General</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-general"></div>
+    </div>
+    <div class="group-card cat-tile" data-kanji-section="verbs" onclick="showKanjiSectionSelection('verbs')" style="cursor:pointer;">
+      <div class="cat-tile-top"><div class="group-name">Verbs</div></div>
+      <div class="cat-bar" id="kanji-index-swatch-verbs"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen-kanji-selection">
+    <div class="settings-title" id="kanji-selection-title">Kanji</div>
+    <div class="settings-sub">Tap a character to select it for drilling.</div>
+
+    <div class="group-card emphasis" id="kanji-select-all-card" onclick="toggleSelectAllKanji()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name" id="kanji-select-all-label">Select all — Numbers</div>
+      </div>
+      <div style="font-size:20px; color:var(--text-muted);">→</div>
+    </div>
+
+    <div id="kanji-grid-numbers-time"></div>
+    <div id="kanji-grid-nature-body" style="display:none;"></div>
+    <div id="kanji-grid-directions-travel" style="display:none;"></div>
+    <div id="kanji-grid-food" style="display:none;"></div>
+    <div id="kanji-grid-places" style="display:none;"></div>
+    <div id="kanji-grid-people" style="display:none;"></div>
+    <div id="kanji-grid-general" style="display:none;"></div>
+    <div id="kanji-grid-verbs" style="display:none;"></div>
+
+    <div class="group-card" id="kanji-hiragana-answers-card" onclick="toggleHiraganaOnKanji()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Show hiragana on answers</div>
+        <div class="group-count">See readings in hiragana instead of romaji</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+
+    <button class="start-btn" id="kanji-selection-drill-btn" onclick="drillKanjiSelection()" disabled style="margin-top:0.5rem;">Drill with this selection</button>
+  </div>
+
+  <!-- Vocab tile-selection reference screen (flat categories: colours, trip-prep) -->
+  <div class="screen" id="screen-vocab-tile-selection">
+    <div class="settings-title" id="vocab-tile-selection-title">Reference</div>
+    <!-- Populated by showVocabTileSelection from CATEGORY_REFERENCE_LINKS
+         (2026-08-31) - 0 or more reference-screen links for whichever
+         category is showing, right below the heading and above the "tap a
+         word" instruction. Used to be separate cards sitting above the
+         category tile in the list screen instead - folded in here so the
+         reference always travels with its category wherever the category's
+         tile ends up, rather than needing to be kept in sync with its
+         position in the list by hand. Empty (no children) for categories
+         with no reference screen, which collapses to no visible gap. -->
+    <div id="vocab-tile-selection-ref-links"></div>
+    <!-- Romaji view (2026-10-01) - quick-reference mode for someone who
+         doesn't read kana yet. Only shown for ROMAJI_VIEW_CATEGORIES (see
+         buildVocabTileGrid); changes the word grid only, never the drills. -->
+    <div class="group-card" id="vocab-tile-romaji-card" onclick="toggleTileShowRomaji()" style="cursor:pointer; display:none;">
+      <div class="group-info">
+        <div class="group-name">Show romaji instead of kana</div>
+        <div class="group-count">Turns this page into a quick phrasebook you can read without kana. Drills still use kana.</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+    <!-- Tap to hear (2026-10-02) - same categories as the romaji view: a
+         panic-button phrasebook where tapping a card speaks it instead of
+         selecting it. Hidden where speech isn't supported. -->
+    <div class="group-card" id="vocab-tile-speak-card" onclick="toggleTileTapToSpeak()" style="cursor:pointer; display:none;">
+      <div class="group-info">
+        <div class="group-name">Tap a card to hear it</div>
+        <div class="group-count" id="vocab-tile-speak-desc">Reads the Japanese out loud when you tap a card, instead of picking it for a drill. Turn off to choose words to drill.</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+    <div class="settings-sub" id="vocab-tile-selection-sub">Tap a word to select it for drilling.</div>
+
+    <div class="tile-select-actions-row">
+      <div class="group-card" id="vocab-tile-select-all-card" onclick="toggleSelectAllVocabTiles()" style="cursor:pointer;">
+        <div class="group-info">
+          <div class="group-name" id="vocab-tile-select-all-label">Select all</div>
+        </div>
+        <div style="font-size:20px; color:var(--text-muted);">→</div>
+      </div>
+      <div class="group-card" id="vocab-tile-random20-card" onclick="toggleRandomVocabTiles()" style="cursor:pointer; display:none;">
+        <div class="group-info">
+          <div class="group-name" id="vocab-tile-random20-label">Random 20</div>
+        </div>
+        <div style="font-size:20px; color:var(--text-muted);">→</div>
+      </div>
+    </div>
+
+    <div id="vocab-tile-grid"></div>
+
+    <div class="group-card" id="vocab-tile-drill-mode-card" onclick="toggleVocabTileDrillMode()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Highlight the meaning instead of sound</div>
+        <div class="group-count">Swaps which text is prominent on the cards — romaji on top by default, English on top when this is on</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+
+    <div class="group-card" id="vocab-tile-reversed-mode-card" onclick="toggleVocabTileReversedMode()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Reverse the drill direction</div>
+        <div class="group-count">See the English meaning first and pick the matching Japanese, instead of reading Japanese and picking the answer</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+
+    <!-- Added here directly (2026-09-22, Andrew) - the equivalent global
+         toggle on the L1/L2/Collections index screens already covered every
+         category's drill in practice (renderQuestion reads typeAnswerMode
+         globally, regardless of entry point - see its own comment), but
+         Andrew had no way to find or flip it from inside a category he'd
+         already opened without backing out to the index and scrolling to
+         the bottom of a long list first. Same per-category persistence and
+         mutual-exclusion treatment as the two toggles above it - see
+         syncVocabTileModeToggles. -->
+    <div class="group-card" id="vocab-tile-type-answer-card" onclick="toggleVocabTileTypeAnswerMode()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Type the answer instead of choosing</div>
+        <div class="group-count">Type the romaji yourself instead of picking from four options. Reversed, type the Japanese — your phone's Japanese keyboard works, and kanji counts too. No effect while highlighting the meaning.</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+
+    <div class="group-card" id="vocab-tile-listen-card" onclick="toggleVocabTileListenMode()" style="cursor:pointer;">
+      <div class="group-info">
+        <div class="group-name">Listen instead of reading</div>
+        <div class="group-count">Hear the word instead of seeing it, then pick or type the answer. Needs sound on; no effect while reversed.</div>
+      </div>
+      <div class="toggle"></div>
+    </div>
+
+    <button class="start-btn" id="vocab-tile-drill-btn" onclick="drillVocabTileSelection()" disabled style="margin-top:0.5rem;">Drill with this selection</button>
+    <button class="btn-secondary" onclick="navBack()">← Back</button>
+  </div>
+
+  <!-- Drill screen -->
+  <div class="screen" id="screen-drill">
+    <div class="progress-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="prog-fill" style="width:0%"></div></div>
+      <div class="progress-label" id="prog-label">1 / 0</div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-pill"><div class="stat-num green" id="stat-correct">0</div><div class="stat-lbl">correct</div></div>
+      <div class="stat-pill"><div class="stat-num red" id="stat-wrong">0</div><div class="stat-lbl">wrong</div></div>
+      <div class="stat-pill"><div class="stat-num blue" id="stat-hints">0</div><div class="stat-lbl">hints</div></div>
+      <div class="stat-pill"><div class="stat-num gold" id="stat-left">0</div><div class="stat-lbl">left</div></div>
+    </div>
+    <div class="card">
+      <div style="text-align:center;"><span class="type-badge" id="q-badge">base</span></div>
+      <div class="char-display" id="q-char">あ</div>
+      <div class="alt-form" id="q-alt-form" style="display:none;"></div>
+      <div class="counter-quiz-reminder" id="q-counter-quiz-reminder" style="display:none;"></div>
+      <div class="hint-btn-row" id="hint-btn-row">
+        <button class="speak-btn" id="speak-btn" onclick="speakCurrent()" title="Hear it" style="display:none;">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3 9 8 9 12 5 12 19 8 15 3 15" fill="currentColor" stroke="currentColor"></polygon>
+            <path d="M15.5 8.5a5 5 0 0 1 0 7"></path>
+            <path d="M18.5 5.5a9 9 0 0 1 0 13"></path>
+          </svg>
+        </button>
+        <!-- Second way to trigger the same hint as speak-btn (see
+             revealRomaji()) - reveals the reading as on-screen text instead
+             of audio. Only shown for forward-direction word questions; a
+             reversed word question already shows romaji under every option,
+             and non-word disp types (kana/kanji/numbers/etc.) are already
+             reading challenges in their own right, so a romaji reveal there
+             would just hand over the answer rather than help read it. -->
+        <button class="speak-btn" id="romaji-btn" onclick="revealRomaji()" title="Show romaji" style="display:none;">Aa</button>
+      </div>
+      <div class="romaji-reveal" id="q-romaji-reveal" style="display:none;"></div>
+      <div class="prompt" id="q-prompt">What is this character?</div>
+      <div class="options" id="q-options"></div>
+      <div class="feedback" id="q-feedback"></div>
+    </div>
+    <div class="context-card" id="q-context-card" style="display:none;">
+      <div class="context-card-label">Context seen in:</div>
+      <div id="q-context-card-body"></div>
+    </div>
+    <button class="next-btn" id="next-btn" onclick="nextQuestion()">Next →</button>
+  </div>
+
+  <!-- Results screen -->
+  <div class="screen" id="screen-results">
+    <div class="results-card">
+      <div class="score-big" id="res-score">0/0</div>
+      <div class="score-sub" id="res-msg">—</div>
+      <div class="missed-label" id="res-missed-label"></div>
+      <div id="res-missed"></div>
+      <div class="results-btns">
+        <button class="btn-primary" onclick="drillAgain()">Drill again</button>
+        <button class="btn-secondary" id="res-missed-btn" onclick="drillMissed()" style="display:none">Drill missed only</button>
+        <button class="btn-secondary" onclick="goBackToSettings()">Change groups</button>
+      </div>
+    </div>
+  </div>
+  <!-- Numbers screen - reading challenges and tools for numbers, times, and
+       (eventually) counters. Reached via its own nav pill rather than living
+       under Vocab, since these are generated-on-the-fly reading challenges,
+       not fixed vocab lists like everything else in Vocab. -->
+  <div class="screen" id="screen-numbers">
+    <div class="settings-title">Numbers</div>
+    <div class="settings-sub">Reading challenges for numbers, times, and counters.</div>
+
+    <!-- Numbers/Times/Counters split into their own pill-switched sections -
+         the page was getting heavy as one long scroll covering three
+         unrelated things at once, and this also leaves room for future
+         challenge types (e.g. the counters quiz) to get their own home
+         without the page just growing forever. Defaults to Times (see
+         currentNumbersSection init) since Specific time always has
+         something live on screen, rather than landing on a blank state. -->
+    <div class="level-filter-row" id="numbers-section-pills">
+      <button class="level-pill" id="numbers-section-pill-times" onclick="setNumbersSection('times')">Times</button>
+      <button class="level-pill" id="numbers-section-pill-numbers" onclick="setNumbersSection('numbers')">Numbers</button>
+      <button class="level-pill" id="numbers-section-pill-counters" onclick="setNumbersSection('counters')">Counters</button>
+      <button class="level-pill" id="numbers-section-pill-money" onclick="setNumbersSection('money')">Money</button>
+    </div>
+
+    <div id="numbers-section-numbers">
+      <div class="group-card cat-tile" onclick="startNumberChallenge()" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Reading numbers</div>
+          <div class="group-count">10 random numbers per round</div>
+        </div>
+        <div class="cat-bar" id="numbers-score-swatch"></div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="group-card" style="cursor:default; display:block;">
+        <div class="group-info">
+          <div class="group-name">Specific number</div>
+          <div class="group-count">Type a number to see how it's said in Japanese</div>
+        </div>
+        <input class="number-tool-input" id="number-tool-input" type="number" inputmode="numeric" min="0" max="99999" step="1" placeholder="0" oninput="updateNumberTool()">
+        <div class="number-tool-hint">Up to 99,999</div>
+        <div class="number-tool-output" id="number-tool-output"></div>
+      </div>
+    </div>
+
+    <div id="numbers-section-times">
+      <div class="group-card cat-tile" onclick="startTimeChallenge()" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Reading times</div>
+          <div class="group-count">10 random times per round, with qualifiers</div>
+        </div>
+        <div class="cat-bar" id="times-score-swatch"></div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="group-card" style="cursor:default; display:block;">
+        <div class="group-info">
+          <div class="group-name">Specific time</div>
+          <div class="group-count">Pick a time to see how it's said in Japanese</div>
+        </div>
+        <div class="time-tool-row">
+          <div class="time-tool-frames">
+            <button class="level-pill" id="time-tool-frame-ni" onclick="setTimeToolFrame('ni')">at</button>
+            <button class="level-pill" id="time-tool-frame-made" onclick="setTimeToolFrame('made')">until</button>
+            <button class="level-pill" id="time-tool-frame-goro" onclick="setTimeToolFrame('goro')">around</button>
+            <button class="level-pill" id="time-tool-frame-kara" onclick="setTimeToolFrame('kara')">from</button>
+          </div>
+          <div class="time-tool-entry">
+            <select id="time-tool-hour" onchange="updateTimeTool()"></select>
+            <span>:</span>
+            <select id="time-tool-minute" onchange="updateTimeTool()"></select>
+          </div>
+          <div class="time-tool-ampm">
+            <button class="level-pill" id="time-tool-ampm-gozen" onclick="setTimeToolAmpm('gozen')">AM</button>
+            <button class="level-pill" id="time-tool-ampm-gogo" onclick="setTimeToolAmpm('gogo')">PM</button>
+          </div>
+          <button class="time-tool-reset-btn" onclick="resetTimeToolToNow()" title="Reset to current time" aria-label="Reset to current time">↺</button>
+        </div>
+        <div class="time-tool-output" id="time-tool-output"></div>
+      </div>
+    </div>
+
+    <div id="numbers-section-counters">
+      <div class="group-card cat-tile" onclick="showCounterQuizSelection()" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Reading counters</div>
+          <div class="group-count">Pick 4 counter types, then 10 rounds of reading + matching</div>
+        </div>
+        <div class="cat-bar" id="counters-score-swatch"></div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="vocab-ref-card" onclick="showItemCountersReference()">
+        <span>Counters for people, objects, animals — reference</span><span class="vocab-ref-arrow">→</span>
+      </div>
+      <div class="vocab-ref-card" onclick="showCountersReference()">
+        <span>Minutes / hours / days / weeks / months / years — reference</span><span class="vocab-ref-arrow">→</span>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="group-card" style="cursor:default; display:block;">
+        <div class="group-info">
+          <div class="group-name">Specific counter</div>
+          <div class="group-count">Pick a counter type and a number to see how it's said</div>
+        </div>
+        <div class="counter-tool-pills level-filter-row counter-unit-pills" id="counter-tool-pills"></div>
+        <div class="counter-tool-desc" id="counter-tool-desc"></div>
+        <input class="number-tool-input" id="counter-tool-input" type="number" inputmode="numeric" min="1" max="10" step="1" value="1" placeholder="1" oninput="updateCounterTool()">
+        <div class="number-tool-hint" id="counter-tool-hint">1–10</div>
+        <div class="number-tool-output" id="counter-tool-output"></div>
+      </div>
+    </div>
+
+    <!-- Money: a trip-prep utility rather than a drill - no scoring, no
+         Japanese reading involved. Sits here because it's the same "type a
+         value, get a computed answer" pattern as Specific number/time/
+         counter above. The rate is a fixed, editable approximation (see
+         appSettings.gbpJpyRate) rather than a live fetch - this app makes
+         no network calls anywhere else, and a value you can nudge yourself
+         is more reliable than a fetch that can fail or behave differently
+         offline. Shared by both cards below. -->
+    <div id="numbers-section-money">
+      <div class="group-card" style="cursor:default; display:block;">
+        <div class="group-info">
+          <div class="group-name">Exchange rate</div>
+          <div class="group-count">Approximate — edit to match what you're actually getting</div>
+        </div>
+        <div class="money-rate-row">
+          <span>£1 =</span>
+          <input class="money-rate-input" id="money-rate-input" type="number" inputmode="decimal" min="1" step="0.01" oninput="updateMoneyRate()">
+          <span>¥</span>
+        </div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="group-card" style="cursor:default; display:block;">
+        <div class="group-info">
+          <div class="group-name">Currency converter</div>
+          <div class="group-count">Convert between yen and pounds, and see the tax-free price in one go</div>
+        </div>
+        <div class="money-dir-pills level-filter-row">
+          <button class="level-pill" id="money-dir-pill-jpy-gbp" onclick="setMoneyDirection('jpy-gbp')">¥ → £</button>
+          <button class="level-pill" id="money-dir-pill-gbp-jpy" onclick="setMoneyDirection('gbp-jpy')">£ → ¥</button>
+        </div>
+        <input class="number-tool-input" id="money-convert-input" type="number" inputmode="decimal" min="0" step="1" placeholder="0" oninput="updateMoneyConverter()">
+        <div class="number-tool-output" id="money-convert-output"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Random counter challenge - counter-type selection screen -->
+  <div class="screen" id="screen-counter-quiz-selection">
+    <div class="settings-title">Reading counters</div>
+    <div class="settings-sub">Pick exactly 4 counter types - these are the only ones used this round.</div>
+    <div id="counter-quiz-selection-list"></div>
+    <div class="number-tool-hint" id="counter-quiz-selection-count">0 of 4 selected</div>
+    <button class="start-btn" id="counter-quiz-start-btn" onclick="startCounterQuizFromSelection()" disabled>Start</button>
+  </div>
+
+  <!-- Match settings screen -->
+  <div class="screen visible" id="screen-match-settings">
+    <div class="settings-title">Vocabulary</div>
+    <div class="settings-sub">Pick a word set, or tap the dice for a random drill.</div>
+
+    <div class="level-filter-row" id="vocab-level-filter-row">
+      <!-- "Groups" (2026-10-07): was "Collections" - renamed back to its
+           original name to free room for the Random pill below. -->
+      <button class="level-pill active" id="level-pill-theme" onclick="setMatchLevel('theme')">Groups</button>
+      <!-- Random (2026-10-07): every random drill on one page - All vocabulary,
+           Weakest/Untested 20 and Random - Level 1/2/3 (/Untaught), with the
+           toggles and a Start button. Monochrome SVG die, currentColor, so it
+           matches the other pills rather than a colour emoji. -->
+      <button class="level-pill level-pill-icon" id="level-pill-random" onclick="setMatchLevel('random')" title="Random drills" aria-label="Random drills"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"></rect><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="15.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"></circle></svg></button>
+      <!-- L1 and L2 merged into one pill (2026-11-05): its list is JP_DRILL_L12_LIST
+           in vocab.js - the old lists plus a few merged Groups (show:'l12'). -->
+      <button class="level-pill" id="level-pill-12" onclick="setMatchLevel('l12')"><span class="pk-1">L1</span>/<span class="pk-2">L2</span></button>
+      <!-- Level 3 (2026-09-28) - the class starts tomorrow; no content yet,
+           always visible (not gated like Untaught below - this is the
+           taught course itself, same as L1/L2), just here and ready so
+           lessons can be added the same way L1/L2 always have been. -->
+      <button class="level-pill" id="level-pill-3" onclick="setMatchLevel(3)">L3</button>
+      <!-- Level 4 (2026-11-04): the L4 app. Same pattern as L3. -->
+      <button class="level-pill" id="level-pill-4" onclick="setMatchLevel(4)">L4</button>
+      <!-- Untaught vocabulary - everything not covered in the taught course
+           (Trip vocabulary and Andrew's old "Materials" content merged into
+           this single tier 2026-08-31 - see applyShowUntaughtVisibility).
+           Useful to anyone, not just Andrew. In line with the others
+           (unlike Andrew below) since it's a real, named tier rather than a
+           scratchpad - hidden via display:none until switched on. -->
+      <!-- Genki tier retired (2026-09-28), then moved out of the app
+           entirely (2026-10-02) into a private vocab pack - its categories
+           lead the Untaught list only on a device where the pack is loaded
+           (see PRIVATE VOCAB PACKS and buildMatchCategoryList). -->
+    </div>
+
+    <!-- Second pill row (2026-10-15): the optional tiers, each shown only when
+         its Settings toggle is on, and the whole row hidden when neither is
+         (applyOptionalPillRow). Untaught moved down here from the main row,
+         where it kept scrolling off the edge; Tourist is new - the tourist
+         words split out of Untaught so they can be switched on by themselves. -->
+    <div class="level-filter-row optional-row" id="vocab-optional-filter-row" style="display:none;">
+      <button class="level-pill" id="level-pill-tourist" onclick="setMatchLevel('tourist')" style="display:none;">Tourist</button>
+      <button class="level-pill" id="level-pill-untaught" onclick="setMatchLevel('untaught')" style="display:none;">Untaught</button>
+    </div>
+
+    <!-- Search + Andrew's personal staging tier, sharing one row. Search is
+         available to everyone regardless of which level tab is open (see
+         submitVocabSearch - it scans whatever's currently visible via
+         itemTierVisible, not just the active tab), so this row itself is
+         permanent now, unlike before Search existed when it only held the
+         Andrew pill and was hidden entirely off Andrew mode. The pill still
+         gets individually hidden by applyShowAndrewModeVisibility - Search's
+         flex:1 fills the row on its own when that happens, and yields space
+         at the end once the pill's back. -->
+    <div class="level-filter-row andrew-row" id="vocab-andrew-filter-row">
+      <!-- Search (2026-10-13): × inside the box clears it; the search button
+           is its own round button at the end of the row. -->
+      <div class="vocab-search-pill">
+        <input type="text" id="vocab-search-input" class="vocab-search-input" placeholder="Search vocab…" onkeydown="handleVocabSearchKeydown(event)" oninput="syncVocabSearchClear()">
+        <button type="button" class="vocab-search-clear" id="vocab-search-clear" onclick="clearVocabSearch()" title="Clear" aria-label="Clear search" style="display:none;">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+        </button>
+      </div>
+        <button class="vocab-search-btn" onclick="submitVocabSearch()" title="Search" aria-label="Search">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+      <!-- Own row, hidden by default so nobody else ever sees it unless they
+           switch "Andrew mode" on themselves. Currently empty - its last
+           content (Materials) moved into Untaught above on 2026-08-31 -
+           that's the expected steady state between experiments, ready for
+           whatever L3 content lands here next. -->
+      <button class="level-pill" id="level-pill-andrew" onclick="setMatchLevel('andrew')" style="display:none;">Andrew</button>
+    </div>
+    <div class="vocab-search-message" id="vocab-search-message" style="display:none;"></div>
+
+
+    <!-- Groups pill: cards built from vocab.js's JP_DRILL_GROUPS (show:'groups')
+         by renderGroupCards() - see the GROUPS note in vocab.js. -->
+    <div id="match-theme-view"></div>
+
+    <div id="match-vocab-view" style="display:none;">
+      <div id="match-category-list"></div>
+    </div>
+
+    <!-- RANDOM PAGE (2026-10-07) - the die pill. Pick one, set the toggles,
+         Start: same shape as every Group/category selection screen. Levels
+         read by tag (scanVocabByTag), so tagged-forward words count. -->
+
+    <div id="match-random-view" style="display:none;">
+      <div class="group-card cat-tile" data-random-key="all" onclick="selectRandomChoice('all')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">All vocabulary</div>
+          <div class="random-choice-desc">20 random words from everything taught</div>
+        </div>
+        <div class="cat-bar" id="theme-all-vocab-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="weakest" onclick="selectRandomChoice('weakest')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Weakest 20</div>
+          <div class="random-choice-desc">The 20 words you've scored lowest on</div>
+        </div>
+        <div class="cat-bar" id="theme-weakest-vocab-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="untested" onclick="selectRandomChoice('untested')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Untested 20</div>
+          <div class="random-choice-desc">20 words you haven't been tested on yet, course words first<span id="untested-count"></span></div>
+        </div>
+        <div class="cat-bar" id="theme-untested-vocab-swatch"></div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <!-- Verb forms (2026-10-07) - every taught verb, so it grows with the
+           vocabulary rather than belonging to a level. See buildVerbFormDeck. -->
+      <div class="group-card cat-tile" data-random-key="verbforms" onclick="selectRandomChoice('verbforms')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Verb forms</div>
+          <div class="random-choice-desc">20 random verb forms, including inviting (ませんか / ましょう) — which form is it? Reverse the direction to build the form instead, and turn on Type to write it yourself</div>
+        </div>
+        <div class="cat-bar" id="random-verbforms-swatch"></div>
+      </div>
+      <!-- Adjective forms (L4, 2026-11-04) - the Verb forms drill for adjectives. -->
+      <div class="group-card cat-tile" data-random-key="adjforms" onclick="selectRandomChoice('adjforms')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Adjective forms</div>
+          <div class="random-choice-desc">20 random adjective forms — おもしろくないです, しずかでした, きれいな 〜 — which form is it? Reverse to build the form, Type to write it</div>
+        </div>
+        <div class="cat-bar" id="random-adjforms-swatch"></div>
+      </div>
+
+      <div class="group-card cat-tile" data-random-key="particles" onclick="selectRandomChoice('particles')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Particles</div>
+          <div class="random-choice-desc">20 sentences with a particle missing — pick the one that fits. Grows with every lesson</div>
+        </div>
+        <div class="cat-bar" id="random-particles-swatch"></div>
+      </div>
+
+      <!-- Small っ (2026-10-13, L3 Lesson 3 double-consonant sheet): hear one
+           word of a pair (きて / きって) and pick it. See SOKUON_PAIRS. -->
+      <div class="group-card cat-tile" data-random-key="sokuon" onclick="selectRandomChoice('sokuon')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Small っ</div>
+          <div class="random-choice-desc">20 word pairs like きて / きって — hear one and pick it. With sound off, read the romaji instead</div>
+        </div>
+        <div class="cat-bar" id="random-sokuon-swatch"></div>
+      </div>
+
+      <div class="section-divider"></div>
+
+      <div class="group-card cat-tile" data-random-key="L1" onclick="selectRandomChoice('L1')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Random – Level 1</div>
+          <div class="random-choice-desc">20 random words from all Level 1 categories</div>
+        </div>
+        <div class="cat-bar" id="random-l1-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="L2" onclick="selectRandomChoice('L2')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Random – Level 2</div>
+          <div class="random-choice-desc">20 random words from all Level 2 categories</div>
+        </div>
+        <div class="cat-bar" id="random-l2-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="L3" onclick="selectRandomChoice('L3')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Random – Level 3</div>
+          <div class="random-choice-desc">20 random words from all Level 3 categories</div>
+        </div>
+        <div class="cat-bar" id="random-l3-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="L4" onclick="selectRandomChoice('L4')" style="cursor:pointer;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Random – Level 4</div>
+          <div class="random-choice-desc">20 random words from all Level 4 categories</div>
+        </div>
+        <div class="cat-bar" id="random-l4-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="untaught" id="random-untaught-card" onclick="selectRandomChoice('untaught')" style="cursor:pointer; display:none;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Random – Untaught</div>
+          <div class="random-choice-desc">20 random words from Untaught vocabulary (not the tourist words)</div>
+        </div>
+        <div class="cat-bar" id="random-untaught-swatch"></div>
+      </div>
+      <div class="group-card cat-tile" data-random-key="tourist" id="random-tourist-card" onclick="selectRandomChoice('tourist')" style="cursor:pointer; display:none;">
+        <div class="cat-tile-top cat-tile-top-stack">
+          <div class="group-name">Random – Tourist</div>
+          <div class="random-choice-desc">20 random words from the tourist words</div>
+        </div>
+        <div class="cat-bar" id="random-tourist-swatch"></div>
+      </div>
+
+      <div class="group-card" id="drill-mode-toggle-card" onclick="toggleDrillByMeaning()" style="cursor:pointer;">
+        <div class="group-info">
+          <div class="group-name">Highlight the meaning instead of sound</div>
+          <div class="group-count">Swaps which text is prominent on word/vocab cards — romaji on top by default, English on top when this is on</div>
+        </div>
+        <div class="toggle" id="drill-mode-toggle"></div>
+      </div>
+      <div class="group-card" id="reversed-mode-toggle-card" onclick="toggleVocabReversed()" style="cursor:pointer;">
+        <div class="group-info">
+          <div class="group-name">Reverse the drill direction</div>
+          <div class="group-count">See the English meaning first and pick the matching Japanese, instead of reading Japanese and picking the answer</div>
+        </div>
+        <div class="toggle" id="reversed-mode-toggle"></div>
+      </div>
+      <div class="group-card" id="type-answer-toggle-card" onclick="toggleTypeAnswerMode()" style="cursor:pointer;">
+        <div class="group-info">
+          <div class="group-name">Type the answer instead of choosing</div>
+          <div class="group-count">Type the romaji yourself instead of picking from four options. Reversed, type the Japanese — your phone's Japanese keyboard works, and kanji counts too. No effect while highlighting the meaning.</div>
+        </div>
+        <div class="toggle" id="type-answer-toggle"></div>
+      </div>
+      <div class="group-card" id="listen-toggle-card" onclick="toggleListenMode()" style="cursor:pointer;">
+        <div class="group-info">
+          <div class="group-name">Listen instead of reading</div>
+          <div class="group-count">Hear the word instead of seeing it, then pick or type the answer. Needs sound on; no effect while reversed.</div>
+        </div>
+        <div class="toggle" id="listen-toggle"></div>
+      </div>
+      <button class="start-btn" id="random-start-btn" onclick="startSelectedRandom()" disabled>Start</button>
+    </div>
+
+  </div>
+
+  <!-- Vocab reference screen (browse-only, no drilling) -->
+  <div class="screen" id="screen-vocab-reference">
+    <div class="settings-title" id="vocab-ref-title">Reference</div>
+    <div class="settings-sub">A quick look — tap Back when you're done.</div>
+    <div id="vocab-ref-list"></div>
+    <button class="btn-secondary" onclick="navBack()">← Back</button>
+  </div>
+
+  <!-- Grammar screen (2026-10-16): its own tab, was a pill on the Vocab screen.
+       renderGrammarPage() fills #match-grammar-view. -->
+  <!-- 作文 (2026-10-23, Andrew): "composition", the school word for writing
+       sentences. Everything for putting sentences together, apart from the
+       grammar notes - see renderBuildPage(). -->
+  <div class="screen" id="screen-build">
+    <div class="settings-title">Composition</div>
+    <div class="settings-sub">さくぶん (作文) — putting sentences together: build them, test yourself, and see which parts need work.</div>
+    <div id="build-view" style="display:flex;"></div>
+  </div>
+
+  <div class="screen" id="screen-grammar">
+    <div class="settings-title">Grammar</div>
+    <div class="settings-sub">Every grammar note, newest first.</div>
+    <div id="match-grammar-view" style="display:flex;"></div>
+  </div>
+
+  <!-- DESK SHEETS (2026-10-13): two printable A4 landscape pages - the
+       sentence skeleton across the top, word cards under each slot. See
+       buildDeskSheets(). -->
+  <div class="screen" id="screen-desk-sheets">
+    <div class="ds-toolbar">
+      <div class="settings-title">Desk sheets</div>
+      <div class="settings-sub">Four pages to keep in front of you whenever you want to make up sentences of your own: pick a word from each column and put the sentence together. Every word here has been taught. Shuffle for a different selection, then print or save as a PDF (A4, landscape). Phones sometimes start in portrait: switch to landscape in the print options.</div>
+      <div class="ds-buttons">
+        <button type="button" class="ds-btn" onclick="buildDeskSheets()">Shuffle words</button>
+        <button type="button" class="ds-btn ds-btn-main" onclick="window.print()">Print / save PDF</button>
+      </div>
+    </div>
+    <div class="ds-scroll"><div id="desk-sheets"></div></div>
+  </div>
+
+  <div class="screen" id="screen-sentence-builder">
+    <div class="sb-head">
+      <div class="settings-title" id="sb-title">Sentence builder</div>
+      <div class="sb-rows">
+        <div class="level-filter-row" id="sb-mode-row">
+          <button type="button" class="level-pill" data-mode="do" onclick="sbSetMode('do')">Doing</button>
+          <button type="button" class="level-pill" data-mode="go" onclick="sbSetMode('go')">Going</button>
+          <button type="button" class="level-pill" data-mode="give" onclick="sbSetMode('give')">Giving</button>
+          <button type="button" class="level-pill" data-mode="being" onclick="sbSetMode('being')">Being</button>
+        </div>
+      </div>
+    </div>
+    <div class="sb-strip" id="sb-strip"></div>
+    <div class="sb-scroll"><div class="sb-cols" id="sb-cols"></div></div>
+    <div class="sb-tip">Works best with your phone turned sideways. Challenges keep a score for each part of the sentence (on the Composition page); they never touch your word greens.</div>
+  </div>
+
+  <!-- Match game screen -->
+
+</main>
+
+<!-- The course vocabulary (2026-10-08) - must load before the app script below. -->
+<script src="ja/vocab.js"></script>
+<script src="ja/grammar.js"></script>
+<script src="ja/kana-strokes.js"></script>
+<script type="module">
+import ja from './lang/ja.js';
+window.LANG = ja;
+</script>
+<script defer src="ui/en.js"></script>
+<script defer src="core/text.js"></script>
+<script defer src="ja/app.js"></script>
+<script defer src="core/core.js"></script>
+<script defer src="core/questions.js"></script>
+<script defer src="ja/legacy.js"></script>
+</body>
+</html>

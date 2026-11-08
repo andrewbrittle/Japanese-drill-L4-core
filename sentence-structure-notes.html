@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Notes — Japanese sentence structure</title>
+<style>
+  /* Same font-loading approach as the app itself: self-hosted rather than a
+     live Google Fonts request, so kana renders with correct, separate
+     component strokes (some system fallback fonts join strokes like さ/き
+     into a single flowing stroke) regardless of network conditions. */
+  @font-face {
+    font-family: 'BIZ UDPGothic';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('fonts/BizUDPGothic-Regular.ttf') format('truetype');
+  }
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --text: #f8f6f2;
+    --text-muted: rgba(248,246,242,0.66);
+    --text-dim: rgba(248,246,242,0.42);
+    --accent: #e8c97a;
+    --accent-dim: rgba(232,201,122,0.12);
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.16);
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f5f0;
+    --surface: #ffffff;
+    --surface2: #efece4;
+    --text: #1a1a1a;
+    --text-muted: rgba(26,26,26,0.66);
+    --text-dim: rgba(26,26,26,0.45);
+    --accent: #a9740f;
+    --accent-dim: rgba(169,116,15,0.12);
+    --border: rgba(0,0,0,0.10);
+    --border-hover: rgba(0,0,0,0.20);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 24px 20px 64px; }
+  .back-link {
+    display: inline-block; font-size: 13px; font-weight: 600; color: var(--text-muted);
+    text-decoration: none; border: 1px solid var(--border); border-radius: 99px;
+    padding: 6px 14px; margin-bottom: 20px; margin-right: 8px;
+  }
+  .back-link:hover { border-color: var(--border-hover); color: var(--text); }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h1 span { color: var(--accent); }
+  .byline { font-size: 13px; font-weight: 600; color: var(--text-dim); margin-bottom: 18px; }
+  .intro { font-size: 15px; color: var(--text-muted); margin-bottom: 20px; }
+  h2 {
+    font-size: 17px; color: var(--accent); border-top: 1px solid var(--border);
+    padding-top: 24px; margin: 32px 0 12px;
+  }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  h3 { font-size: 15px; color: var(--text); margin: 20px 0 8px; }
+  p { font-size: 14.5px; color: var(--text-muted); margin: 0 0 12px; }
+  ul { margin: 0 0 12px; padding-left: 20px; }
+  li { font-size: 14.5px; color: var(--text-muted); margin-bottom: 4px; }
+  .note {
+    font-size: 13px; color: var(--text-dim); background: var(--surface2);
+    border-radius: 8px; padding: 8px 12px; margin: 10px 0 16px;
+  }
+  /* Worked example blocks - the whole reason these notes need the app's own
+     font loaded, since every one of these has real kana in it. */
+  .example {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin: 10px 0 16px;
+  }
+  .example-jp { font-size: 17px; font-weight: 700; margin-bottom: 4px; font-family: 'BIZ UDPGothic', sans-serif; }
+  .example-romaji { font-size: 13px; color: var(--text-dim); font-style: italic; margin-bottom: 4px; }
+  .example-en { font-size: 14px; color: var(--text-muted); }
+  .crosslink {
+    background: var(--accent-dim); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 12px 14px; margin: 24px 0 8px; font-size: 14px; color: var(--text);
+  }
+  .crosslink a { color: var(--accent); font-weight: 700; text-decoration: none; }
+  .crosslink a:hover { text-decoration: underline; }
+  .footer { margin-top: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back-link" href="./index.html">← Back to the app</a>
+  <a class="back-link" href="./japanese-vs-english-notes.html">Next note: Japanese vs English →</a>
+
+  <h1>Japanese <span>sentence structure</span></h1>
+  <div class="byline">Andrew Brittle, 2026</div>
+  <p class="intro">
+    The "Sentence order" reference in the drill app is built around one specific pattern — the motion sentence
+    taught early in the course. It's a useful anchor, but it raises an obvious question: how much of this
+    is "how Japanese sentences work" and how much is specific to sentences about going somewhere? The short
+    answer is that most of it generalises — only one slot is genuinely travel-specific — and understanding
+    <em>why</em> it generalises turns out to reveal some of the bigger structural differences between English
+    and Japanese, which is the subject of the companion note linked below.
+  </p>
+
+  <h2>The motion-sentence frame</h2>
+  <p>[topic]は [time]に [companion]と [means]で [destination]に 行きます / 来ます / 帰ります (か)。</p>
+  <div class="example">
+    <div class="example-jp">田中さんは土曜日に友達と電車で大阪に行きますか。</div>
+    <div class="example-romaji">Tanaka-san wa doyoubi ni tomodachi to densha de Oosaka ni ikimasu ka.</div>
+    <div class="example-en">"Is Tanaka-san going to Osaka by train with a friend on Saturday?"</div>
+  </div>
+
+  <h2>What generalises, and what doesn't</h2>
+  <p>Four of the six pieces work with almost any verb, not just motion verbs:</p>
+  <ul>
+    <li><strong>は (topic)</strong> — introduces what the sentence is about, regardless of verb.</li>
+    <li><strong>に (time)</strong> — a specific point in time, regardless of verb.</li>
+    <li><strong>と (companion)</strong> — "together with," regardless of verb. 友達と食べます ("eat with a friend") is just as normal as 友達と行きます.</li>
+    <li><strong>+か</strong> — the question marker, tacked onto the end of any sentence.</li>
+  </ul>
+  <p>
+    The one piece that's genuinely tied to motion verbs is the <strong>destination-に</strong> slot. に marking
+    "where you're headed" only exists with verbs of actual movement (行く, 来る, 帰る, and a few others). Take
+    that verb away, and that slot gets replaced by something else entirely, depending on what kind of verb is
+    now doing the work.
+  </p>
+
+  <h3>A plain action verb with an object</h3>
+  <p>
+    A verb like eat, read, write, or buy drops the destination slot and picks up を instead, marking the
+    direct object:
+  </p>
+  <div class="example">
+    <div class="example-jp">わたしは土曜日に友達とレストランでケーキを食べます。</div>
+    <div class="example-en">"I'm eating cake with a friend at a restaurant on Saturday."</div>
+  </div>
+  <p>
+    で is still there, but its job has quietly changed. In the travel sentence, で marked <em>means</em> —
+    でんしゃで, "by train." Here it marks <em>where the action happens</em> — レストランで, "at the restaurant."
+    で genuinely does both jobs (method/tool, and location-of-action), and the verb determines which meaning
+    applies.
+  </p>
+
+  <h3>Existence verbs (います / あります)</h3>
+  <p>
+    "There is/are" verbs bring に back, but with yet another meaning — not a destination being travelled to,
+    but a place something already occupies:
+  </p>
+  <div class="example">
+    <div class="example-jp">公園に猫がいます。</div>
+    <div class="example-en">"There's a cat in the park."</div>
+  </div>
+  <div class="note">
+    A real trap for learners coming from the motion pattern: it looks like the same に, but it's doing a
+    different job — location of existence rather than location of movement. Japanese teaching materials flag
+    this に/で contrast explicitly, precisely because English doesn't distinguish these with different words
+    the way Japanese does.
+  </div>
+
+  <h3>Verbs like 会う (to meet)</h3>
+  <p>に isn't fundamentally about "destination" at all — it's closer to the target or endpoint of the verb, and travelling toward a place is just one instance of that:</p>
+  <div class="example">
+    <div class="example-jp">友達に会います。</div>
+    <div class="example-en">"[I'm] meeting a friend."</div>
+  </div>
+
+  <p>
+    So the honest summary: only the destination slot is travel-specific. は, と, time-に, and +か are genuine,
+    reusable building blocks for Japanese sentences generally.
+  </p>
+
+  <div class="crosslink">
+    This pattern — one slot changing meaning depending on the verb, particles doing different jobs in
+    different contexts — is really a symptom of some bigger structural differences between English and
+    Japanese. Those are the subject of the companion note:
+    <a href="./japanese-vs-english-notes.html">Japanese vs English — structural differences →</a>
+  </div>
+
+  <div class="footer">
+    <a class="back-link" href="./index.html">← Back to the app</a>
+    <a class="back-link" href="./japanese-vs-english-notes.html">Next note →</a>
+  </div>
+</div>
+<script>
+  // Match whichever theme the app itself is currently set to, since this page
+  // shares localStorage with index.html on the same origin.
+  try {
+    const s = JSON.parse(localStorage.getItem('jpDrillSettings') || '{}');
+    if (s.theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  } catch (e) {}
+</script>
+</body>
+</html>
